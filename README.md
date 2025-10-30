@@ -1,18 +1,18 @@
 Real-Time Industry Insight & Strategic Intelligence System
 
-Project Overview
+🚀 Project Overview
 
 This project implements a Strategic Intelligence System designed to collect, process, analyze, and visualize multi-source data streams for any specified company or market asset in real-time.
 
 Developed during the Infosys Springboard Internship, the system provides a comprehensive, rapid snapshot of market mood (Sentiment Analysis) and fundamental price trends, laying the groundwork for advanced financial forecasting.
 
-Sprint 1 Accomplishments: Data Foundation
+🎯 Sprint 1 Accomplishments: Data Foundation
 
 The initial phase focused on building a robust, interactive data pipeline within the Project_Sprint1.ipynb notebook.
 
-Features:                                                                                                                          
- 
-1.Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
+Data Sources & Analysis Features
+                                                                                                                      
+ 1.Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
 
 2.Company Summary  -                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
 
@@ -32,7 +32,7 @@ Sentiment Trend: Line chart visualizing polarity changes over the dataset time s
 
 Market Price Trend: Line chart tracking the asset's closing price over time.
 
-Setup and Installation
+💻 Setup and Installation
 
 Requirements
 
@@ -60,8 +60,17 @@ Launch Jupyter:
 
 Start your Jupyter server and open the main analysis file: Project_Sprint1.ipynb.
 
-Execute:
-Run all cells sequentially. When prompted, enter the company name or symbol you wish to analyze (e.g., Netflix)
+Execute:  Run all cells sequentially. When prompted, enter the company name or symbol you wish to analyze (e.g., Netflix).
+
+➡️ Next Steps (Future Development)
+
+The system is now ready for expansion in future sprints:
+
+Real-Time Dashboard: Develop an interactive front-end (e.g., using Streamlit, Dash, or Angular) to display all charts and data live.
+
+AI-Driven Forecasting: Implement Time Series forecasting models (like LSTM or Prophet) to predict future price movements.
+
+Advanced NLP: Utilize specialized models for more granular, industry-specific text analysis.
 
 Team Members:
 
