@@ -10,19 +10,19 @@ Sprint 1 Accomplishments: Data Foundation
 
 The initial phase focused on building a robust, interactive data pipeline within the Project_Sprint1.ipynb notebook.
 
-Feature                                           Description                                                                                 Key Technology
+Features:                                                                                                                          
  
-Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
+1.Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
 
-Company Summary  -                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
+2.Company Summary  -                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
 
-Market Data      -           Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
+3.Market Data      -           Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
 
-News & Headlines  -                Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
+4.News & Headlines  -                Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
 
-Sentiment Analysis -  Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
+5.Sentiment Analysis -  Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
 
-Data Structuring    -         All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
+6.Data Structuring    -         All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
 
 Key Visualizations Produced:
 
