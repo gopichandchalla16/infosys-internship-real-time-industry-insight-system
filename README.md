@@ -74,28 +74,28 @@ Upload and run the notebook.
 
 📌 Usage Workflow
 
-1.Enter target industry/company keyword
-2.Run data scraping cells
-3.Automatically clean & normalize incoming data
-4.Generate visual insights
-5.Export processed dataset for reporting or ML pipelines
+1.Enter target industry/company keyword<br>
+2.Run data scraping cells<br>
+3.Automatically clean & normalize incoming data<br>
+4.Generate visual insights<br>
+5.Export processed dataset for reporting or ML pipelines<br>
 
 📊 Example Insights Generated (Sprint-1)
 
-Market capitalization trends
-Company background details
-Industry growth indicators
-Recent news mentions
-Comparison tables
-Line/bar trend charts
+Market capitalization trends<br>
+Company background details<br>
+Industry growth indicators<br>
+Recent news mentions<br>
+Comparison tables<br>
+Line/bar trend charts<br>
 
 
 📝 Observations & Findings
 
-Some sources restrict live scraping (handled via fallback logic)
-Data formats vary heavily across platforms
-Cleaning pipeline improves quality significantly
-Trend visualization reveals growth potential
+Some sources restrict live scraping (handled via fallback logic)<br>
+Data formats vary heavily across platforms<br>
+Cleaning pipeline improves quality significantly<br>
+Trend visualization reveals growth potential<br>
 
 
 🔮 Future Scope (Sprint-2 & Beyond)
