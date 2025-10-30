@@ -111,6 +111,6 @@ News topic classification with AI
 
 👥 Contributors
 
-**Anshika Gupta** 
 **Gopichand**     
+**Anshika Gupta** 
 **Janmejay**     
