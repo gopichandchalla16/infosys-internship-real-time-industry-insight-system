@@ -100,17 +100,17 @@ Trend visualization reveals growth potential
 
 🔮 Future Scope (Sprint-2 & Beyond)
 
-Company-wise sentiment analysis using NLP
-Twitter/X API integration
-Financial ratio comparison dashboards
-Stock price prediction using ML
-Industry benchmarking scoring system
-Report PDF auto-generator
-News topic classification with AI
+Company-wise sentiment analysis using NLP<br>
+Twitter/X API integration<br>
+Financial ratio comparison dashboards<br>
+Stock price prediction using ML<br>
+Industry benchmarking scoring system<br>
+Report PDF auto-generator<br>
+News topic classification with AI<br>
 
 
 👥 Contributors
 
-**Gopichand**
-**Anshika Gupta**
-**Janmejay Singh**
+**Gopichand**<br>
+**Anshika Gupta**<br>
+**Janmejay Singh**<br>
