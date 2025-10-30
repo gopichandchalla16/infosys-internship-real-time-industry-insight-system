@@ -2,98 +2,73 @@ Real-Time Industry Insight & Strategic Intelligence System
 
 Project Overview
 
-This project, developed as part of the Infosys Springboard Internship, is a Real-Time Industry Insight and Strategic Intelligence System. Its core objective is to dynamically gather, analyze, and visualize multi-source data streams to provide a comprehensive, real-time snapshot of any specified company or market asset.
+This project implements a Strategic Intelligence System designed to collect, process, analyze, and visualize multi-source data streams for any specified company or market asset in real-time.
 
-The system uses Python-based data scraping, cleaning (via pandas), and fundamental analysis techniques to extract actionable insights, such as market sentiment and price trends.
+Developed during the Infosys Springboard Internship, the system provides a comprehensive, rapid snapshot of market mood (Sentiment Analysis) and fundamental price trends, laying the groundwork for advanced financial forecasting.
 
-print 1: Data Sourcing & Handling (Completed)
+Sprint 1 Accomplishments: Data Foundation
 
-The first sprint established the foundational data pipeline and analysis capabilities within a flexible, interactive Jupyter Notebook (Project_Sprint1.ipynb).
+The initial phase focused on building a robust, interactive data pipeline within the Project_Sprint1.ipynb notebook.
 
-Key Features & Data Sources
+Feature                                           Description                                                                                 Key Technology
+ 
+Dynamic Sourcing        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
 
-Feature
+Company Summary                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
 
-Description
+Market Data                 Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
 
-Libraries Used
+News & Headlines                  Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
 
-Dynamic Input
+Sentiment Analysis   Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
 
-Allows the user to enter any company or asset name (e.g., "Tesla," "Bitcoin") to dynamically source data.
+Data Structuring             All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
 
-input()
+Key Visualizations Produced:
 
-Industry Summary
+Sentiment Distribution: Bar chart showing the overall mood based on the analyzed text data.
 
-Collects a concise, real-time summary of the company/asset.
+Sentiment Trend: Line chart visualizing polarity changes over the dataset time series.
 
-wikipedia
+Market Price Trend: Line chart tracking the asset's closing price over time.
 
-Market Data
+Setup and Installation
 
-Fetches the latest stock/crypto market prices and historical data.
-
-yfinance (or similar financial API)
-
-News Headlines
-
-Gathers the most recent news headlines relevant to the asset.
-
-feedparser (for Google News RSS)
-
-Sentiment Analysis
-
-Applies basic Natural Language Processing (NLP) to news headlines and synthetic social media data (50 generated tweets) to determine market mood.
-
-TextBlob
-
-Data Structure
-
-Cleans and organizes all raw data into structured, easy-to-use pandas DataFrames.
+Requirements
 
 pandas
 
-Visualizations
+numpy
 
-The Sprint 1 notebook successfully generated key visualizations to communicate initial findings:
+matplotlib
 
-Sentiment Distribution: A bar chart showing the breakdown of positive, negative, and neutral sentiments.
+wikipedia
 
-Sentiment Trend: A line chart visualizing how sentiment polarity changes over a time series of posts/headlines.
+yfinance
 
-Market Price Trend: A line chart tracking the asset's closing price over time.
+feedparser
 
-Future Scope (Sprint 2 Onward)
+textblob
 
-Sprint 2 will build upon this foundation by integrating more sophisticated features:
+jupyter
 
-AI-Driven Analytics: Implementing advanced machine learning models (e.g., LSTM, Prophet) for price forecasting.
+Alpha Vantage API Key
 
-Real-Time Dashboard: Creating an interactive web dashboard (using tools like Streamlit or Dash) to display all insights and charts live.
-
-Deeper NLP: Utilizing state-of-the-art LLMs or pre-trained models (e.g., BERT) for more nuanced sentiment and entity recognition.
-
-Setup and Requirements
-
-To run the analysis notebook, you will need the following Python packages:
-
-pip install pandas numpy matplotlib wikipedia yfinance feedparser textblob
-
-
-How to Run the Notebook
+How to Run
 
 Clone the Repository:
 
-git clone [https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git](https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git)
+git clone [https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git]
+(https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git)
 cd infosys-internship-real-time-industry-insight-system
 
 
-Open the Notebook:
-Launch Jupyter Lab or VS Code and open Project_Sprint1.ipynb.
+Launch Jupyter:
 
-Execute Cells:
-Run the cells sequentially. When prompted, enter the name of the company or asset you wish to analyze (e.g., Netflix, TCS, Bitcoin).
+Start your Jupyter server and open the main analysis file: Project_Sprint1.ipynb.
+
+Execute:
+Run all cells sequentially. When prompted, enter the company name or symbol you wish to analyze (e.g., Netflix)
 
 Team Members:
 
