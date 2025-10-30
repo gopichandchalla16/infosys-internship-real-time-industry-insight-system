@@ -1,116 +1,81 @@
-# Real-Time Industry Insight & Strategic Intelligence System
+Real-Time Industry Insight & Strategic Intelligence System
 
-A data-driven intelligence platform that gathers, processes, analyzes, and visualizes real-time industry information from open public sources. This project enables organizations to monitor market dynamics, competitor performance, financial trends, and public sentiment to support strategic decision-making.
+🚀 Project Overview
 
----
+This project implements a Strategic Intelligence System designed to collect, process, analyze, and visualize multi-source data streams for any specified company or market asset in real-time.
 
-## 🚀 Features
+Developed during the Infosys Springboard Internship, the system provides a comprehensive, rapid snapshot of market mood (Sentiment Analysis) and fundamental price trends, laying the groundwork for advanced financial forecasting.
 
-- 🔍 **Real-time Industry Data Collection**
-  - Extracts data from trusted public sources (Wikipedia, stock market portals, news sites, social platforms, etc.)
+🎯 Sprint 1 Accomplishments: Data Foundation
 
-- 📦 **Data Cleaning & Preprocessing**
-  - Handles missing values, formatting issues, duplicate entries, and inconsistencies.
+The initial phase focused on building a robust, interactive data pipeline within the Project_Sprint1.ipynb notebook.
 
-- 📊 **Data Visualization**
-  - Generates meaningful visual insights through charts and trend analysis.
+Data Sources & Analysis Features
+                                                                                                                      
+ 1.Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
 
-- 🧠 **Sentiment & Pattern Insights**
-  - Detects public sentiment on technology, companies, or sectors (Sprint-2 ready).
+2.Company Summary  -                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
 
-- 🧾 **Structured Data Storage**
-  - Organized datasets ready for further ML/BI systems.
+3.Market Data      -           Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
 
-- 📑 **Report Generation**
-  - Capable of producing industry insight summaries.
+4.News & Headlines  -                Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
 
----
+5.Sentiment Analysis -  Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
 
-## 🧠 Objective
+6.Data Structuring    -         All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
 
-To provide companies, analysts, investors, and researchers a centralized platform that offers:
-- Competitor analysis
-- Market trends
-- Growth rate observations
-- Strategic business intelligence
-- Better-informed decision making
+Key Visualizations Produced:
 
----
+Sentiment Distribution: Bar chart showing the overall mood based on the analyzed text data.
 
-## 📂 Sprint-1 Deliverables (Milestone Achieved ✅)
+Sentiment Trend: Line chart visualizing polarity changes over the dataset time series.
 
-1. ✅ Data sourcing from external internet sources  
-2. ✅ Data extraction & formatting  
-3. ✅ Handling missing/incomplete values  
-4. ✅ Dataset structuring and cleaning  
-5. ✅ Exploratory analysis & observations  
-6. ✅ Initial visualizations  
-7. ✅ Final processed dataset export  
+Market Price Trend: Line chart tracking the asset's closing price over time.
 
----
+💻 Setup and Installation
 
-## 🛠️ Tech Stack
+Requirements
 
-| Category | Tools / Libraries |
-|---------|-------------------|
-| Programming | Python |
-| Notebook Environment | Google Colab |
-| Data Handling | Pandas |
-| Data Fetching | Requests |
-| Web Scraping | BeautifulSoup |
-| Visualization | Matplotlib |
+pandas
 
----
+numpy
 
-2️⃣ Install Dependencies
+matplotlib
 
-pip install pandas requests beautifulsoup4 matplotlib
+wikipedia
 
+yfinance
 
-3️⃣ Open Google Colab
+feedparser
 
-Upload and run the notebook.
+textblob
 
+jupyter
 
-📌 Usage Workflow
+Alpha Vantage API Key
 
-1.Enter target industry/company keyword<br>
-2.Run data scraping cells<br>
-3.Automatically clean & normalize incoming data<br>
-4.Generate visual insights<br>
-5.Export processed dataset for reporting or ML pipelines<br>
+How to Run
 
-📊 Example Insights Generated (Sprint-1)
+Launch Jupyter:
 
-Market capitalization trends<br>
-Company background details<br>
-Industry growth indicators<br>
-Recent news mentions<br>
-Comparison tables<br>
-Line/bar trend charts<br>
+Start your Jupyter server and open the main analysis file: Project_Sprint1.ipynb.
 
+Execute:  Run all cells sequentially. When prompted, enter the company name or symbol you wish to analyze (e.g., Netflix).
 
-📝 Observations & Findings
+➡️ Next Steps (Future Development)
 
-Some sources restrict live scraping (handled via fallback logic)<br>
-Data formats vary heavily across platforms<br>
-Cleaning pipeline improves quality significantly<br>
-Trend visualization reveals growth potential<br>
+The system is now ready for expansion in future sprints:
 
+Real-Time Dashboard: Develop an interactive front-end (e.g., using Streamlit, Dash, or Angular) to display all charts and data live.
 
-🔮 Future Scope (Sprint-2 & Beyond)
+AI-Driven Forecasting: Implement Time Series forecasting models (like LSTM or Prophet) to predict future price movements.
 
-Company-wise sentiment analysis using NLP<br>
-Twitter/X API integration<br>
-Financial ratio comparison dashboards<br>
-Stock price prediction using ML<br>
-Industry benchmarking scoring system<br>
-Report PDF auto-generator<br>
-News topic classification with AI<br>
+Advanced NLP: Utilize specialized models for more granular, industry-specific text analysis.
 
+Team Members:
 
-👥 Contributors
+Gopichand
 
-**Gopichand**<br>
-**Anshika Gupta**<br>
-**Janmejay Singh**<br>
+Anshika
+
+Janmejay
