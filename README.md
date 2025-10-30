@@ -12,17 +12,17 @@ The initial phase focused on building a robust, interactive data pipeline within
 
 Feature                                           Description                                                                                 Key Technology
  
-Dynamic Sourcing        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
+Dynamic Sourcing -        Allows the user to enter any asset name (e.g., Infosys, TCS, Netflix) for analysis.                                      Python input()
 
-Company Summary                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
+Company Summary  -                Fetches a concise, structured summary of the asset or company.                                                    wikipedia
 
-Market Data                 Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
+Market Data      -           Collects historical and latest closing prices for trend analysis.                                                    yfinance / Financial API
 
-News & Headlines                  Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
+News & Headlines  -                Gathers recent news items to capture current market events.                                                    feedparser (Google News RSS)
 
-Sentiment Analysis   Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
+Sentiment Analysis -  Processes news and synthetic social media data (50 generated tweets) to determine market mood (Positive/Negative/Neutral).   TextBlob
 
-Data Structuring             All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
+Data Structuring    -         All raw data is cleaned, labeled, and converted into analytical pandas DataFrames.                                      pandas  
 
 Key Visualizations Produced:
 
@@ -55,13 +55,6 @@ jupyter
 Alpha Vantage API Key
 
 How to Run
-
-Clone the Repository:
-
-git clone [https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git]
-(https://github.com/gopichandchalla16/infosys-internship-real-time-industry-insight-system.git)
-cd infosys-internship-real-time-industry-insight-system
-
 
 Launch Jupyter:
 
