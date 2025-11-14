@@ -1,104 +1,182 @@
-# Real-Time Industry Insight & Strategic Intelligence System
+# 🌐 Real-Time Industry Insight & Strategic Intelligence System
 
-A data-driven intelligence platform that gathers, processes, analyzes, and visualizes real-time industry information from open public sources. This project enables organizations to monitor market dynamics, competitor performance, financial trends, and public sentiment to support strategic decision-making.
-
----
-
-## 🚀 Features
-
-- 🔍 **Real-time Industry Data Collection**
-  - Extracts data from trusted public sources (Wikipedia, stock market portals, news sites, social platforms, etc.)
-
-- 📦 **Data Cleaning & Preprocessing**
-  - Handles missing values, formatting issues, duplicate entries, and inconsistencies.
-
-- 📊 **Data Visualization**
-  - Generates meaningful visual insights through charts and trend analysis.
-
-- 🧠 **Sentiment & Pattern Insights**
-  - Detects public sentiment on technology, companies, or sectors (Sprint-2 ready).
-
-- 🧾 **Structured Data Storage**
-  - Organized datasets ready for further ML/BI systems.
-
-- 📑 **Report Generation**
-  - Capable of producing industry insight summaries.
+### 📊 AI-Powered Market Intelligence • LLM Summaries • Financial Sentiment • Forecasting • Alerts
 
 ---
 
-## 🧠 Objective
+## 🚀 Overview
 
-To provide companies, analysts, investors, and researchers a centralized platform that offers:
-- Competitor analysis
-- Market trends
-- Growth rate observations
-- Strategic business intelligence
-- Better-informed decision making
+The **Real-Time Industry Insight & Strategic Intelligence System** is an AI-driven analytics platform designed to continuously ingest real-world financial + news + social media data and transform it into strategic insights. It integrates **LLMs (Gemini API)**, **Finance-tuned Transformers (FinBERT)**, predictive modeling, and real-time alerting to assist decision-makers with actionable intelligence.
+
+This system is built as part of the Infosys project for real-time industry intelligence.
 
 ---
 
-## 📂 Sprint-1 Deliverables (Milestone Achieved ✅)
+## ✨ Key Features
 
-1. ✅ Data sourcing from external internet sources  
-2. ✅ Data extraction & formatting  
-3. ✅ Handling missing/incomplete values  
-4. ✅ Dataset structuring and cleaning  
-5. ✅ Exploratory analysis & observations  
-6. ✅ Initial visualizations  
-7. ✅ Final processed dataset export  
+* **📥 Real-Time Data Ingestion** (market data, business news, tweets)
+* **🧹 Data Cleaning & Preprocessing** — pipelines for consistent and reproducible analytics
+* **🧠 Dual Sentiment Engine:**
+
+  * **Gemini API (LLM-based)** → contextual sentiment + business summaries
+  * **FinBERT (Hugging Face: ProsusAI/finbert)** → finance-specific sentiment classification
+* **📈 Predictive Modeling** using ARIMA / Prophet / LSTM (extensible)
+* **📊 Interactive Visual Dashboard** using Plotly
+* **🔔 Slack Alerts** triggered by sentiment shifts or market anomalies
+* **♻️ Modular Architecture** designed for scaling to multiple companies or industries
+
+---
+
+## 🧠 Sentiment Analysis Engine
+
+This platform uses **two complementary models** to achieve robust sentiment evaluation:
+
+### **1️⃣ FinBERT — ProsusAI/finbert (Hugging Face)**
+
+FinBERT is a transformer model trained specifically on **financial text**, providing domain-accurate polarity predictions.
+
+**Advantages:**
+
+* Optimized for financial reports, market news, earnings calls
+* Much higher precision in finance context than generic LLMs
+* Fast inference; can run locally or on cloud
+
+**Use-case Examples:**
+
+* Market-moving news classification
+* Earnings-call transcript evaluation
+
+### **2️⃣ Gemini API — LLM-based Sentiment + Summaries**
+
+Gemini is used to:
+
+* Generate **structured sentiment outputs**
+* Provide **human-like summaries** of news & trends
+* Extract **themes, risk signals, opportunities**
+* Reduce noise and add interpretability
+
+**Advantages:**
+
+* Handles long-text + reasoning
+* Captures nuance missed by classifiers
+* Provides contextual insights and narratives
+
+**🧬 Combined Approach:**
+We merge:
+
+```
+final_sentiment = weighted_sum(FinBERT_score, Gemini_score)
+```
+
+This hybrid system offers both **accuracy (FinBERT)** and **contextual reasoning (Gemini)**.
 
 ---
 
-## 🛠️ Tech Stack
+## 🏗️ System Architecture
 
-| Category | Tools / Libraries |
-|---------|-------------------|
-| Programming | Python |
-| Notebook Environment | Google Colab |
-| Data Handling | Pandas |
-| Data Fetching | Requests |
-| Web Scraping | BeautifulSoup |
-| Visualization | Matplotlib |
+```
+        ┌────────────┐
+        │  Sources   │
+        │ News API   │
+        │ Twitter    │
+        │ Price Data │
+        └──────┬─────┘
+               │
+        ┌──────▼──────┐
+        │ Ingestion   │
+        │  Pipeline   │
+        └──────┬──────┘
+               │
+    ┌──────────▼──────────┐
+    │ Preprocessing Layer │
+    └──────────┬──────────┘
+               │
+       ┌───────▼────────────┐
+       │ Dual Sentiment AI  │
+       │ FinBERT + Gemini   │
+       └───────┬────────────┘
+               │
+   ┌───────────▼─────────────┐
+   │ Forecasting Engine      │
+   └───────────┬─────────────┘
+               │
+   ┌───────────▼──────────────┐
+   │ Dashboard & Visuals      │
+   └───────────┬──────────────┘
+               │
+        ┌──────▼─────────┐
+        │ Alerts (Slack) │
+        └────────────────┘
+```
+
 
 ---
-2️⃣ Install Dependencies
-pip install pandas requests beautifulsoup4 matplotlib
 
-3️⃣ Open Google Colab
-Upload and run the notebook.
+## 🛠️ Installation & Setup
 
+### 1️⃣ Clone the Repository
 
-📌 Usage Workflow
+```
+git clone https://github.com/your-username/your-repo.git
+cd your-repo
+```
 
-1.Enter target industry/company keyword<br>
-2.Run data scraping cells<br>
-3.Automatically clean & normalize incoming data<br>
-4.Generate visual insights<br>
-5.Export processed dataset for reporting or ML pipelines<br>
+### 2️⃣ Install Dependencies
 
+```
+pip install -r requirements.txt
+```
 
-📊 Example Insights Generated (Sprint-1)
+### 3️⃣ Setup Environment Variables
 
-Market capitalization trends<br>
-Company background details<br>
-Industry growth indicators<br>
-Recent news mentions<br>
-Comparison tables<br>
-Line/bar trend charts<br>
+Create a `.env` file:
 
+```
+GEMINI_API_KEY=your_key_here
+SLACK_WEBHOOK_URL=your_webhook
+```
 
-📝 Observations & Findings
+---
 
-Some sources restrict live scraping (handled via fallback logic)<br>
-Data formats vary heavily across platforms<br>
-Cleaning pipeline improves quality significantly<br>
-Trend visualization reveals growth potential<br>
+## 🔮 Forecasting Engine
 
+Planned & supported models:
 
-👥 Contributors
-<br>
- **Anshika Gupta** <br>
- **Gopichand**     <br>
- **Janmejay Singh**      <br>
+* **ARIMA** — statistical baseline
+* **LSTM** — non-linear time-series modeling
+
+---
+
+## 📈 Dashboard & Visualization
+
+The system supports interactive charts:
+
+* Price trends
+* Sentiment over time (FinBERT + Gemini)
+* Volume & volatility
+* Theme extraction
+
+Plotly-based dashboard (can be migrated to Streamlit).
+
+---
+
+## 🔔 Real-Time Alerts
+
+Alerts trigger when:
+
+* Sentiment divergence exceeds threshold
+* Price deviates from forecast
+* Market-moving news is detected
+
+Delivered via Slack Webhooks.
+
+---
+
+## 🤝 Contributors
+
+* **Anshika Gupta**
+* **Gopichand**
+* **Janmejay**
+* **Vaishnavi**
 
 
