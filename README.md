@@ -61,14 +61,6 @@ Gemini is used to:
 * Captures nuance missed by classifiers
 * Provides contextual insights and narratives
 
-**🧬 Combined Approach:**
-We merge:
-
-```
-final_sentiment = weighted_sum(FinBERT_score, Gemini_score)
-```
-
-This hybrid system offers both **accuracy (FinBERT)** and **contextual reasoning (Gemini)**.
 
 ---
 
@@ -77,13 +69,13 @@ This hybrid system offers both **accuracy (FinBERT)** and **contextual reasoning
 ```
         ┌────────────┐
         │  Sources   │
-        │ News API   │
-        │ Twitter    │
+        │  News API  │
+        │  Twitter   │
         │ Price Data │
         └──────┬─────┘
                │
         ┌──────▼──────┐
-        │ Ingestion   │
+        │  Ingestion  │
         │  Pipeline   │
         └──────┬──────┘
                │
@@ -97,11 +89,11 @@ This hybrid system offers both **accuracy (FinBERT)** and **contextual reasoning
        └───────┬────────────┘
                │
    ┌───────────▼─────────────┐
-   │ Forecasting Engine      │
+   │   Forecasting Engine    │
    └───────────┬─────────────┘
                │
    ┌───────────▼──────────────┐
-   │ Dashboard & Visuals      │
+   │   Dashboard & Visuals    │
    └───────────┬──────────────┘
                │
         ┌──────▼─────────┐
