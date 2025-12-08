@@ -32,32 +32,31 @@ This project demonstrates the complete **data pipeline from data acquisition →
 ---
 
 ## 🛠 Tech Stack
-
-* **Programming Language:** Python
-* **Libraries Used:**
-
-  * requests, BeautifulSoup – Web scraping
-  * pandas – Data processing
-  * matplotlib, seaborn – Data visualization
-  * yfinance – Stock market data
-  * wikipedia – Company information
-  * transformers – FinBERT sentiment model
-  * textblob – Fallback sentiment analysis
-  * faker – Dummy text generation
+- **Programming Language:** Python
+- **Libraries Used:**
+  - requests, BeautifulSoup – Web scraping
+  - pandas – Data processing
+  - matplotlib, seaborn – Data visualization
+  - yfinance – Stock market data
+  - wikipedia – Company information
+  - transformers – FinBERT sentiment model
+  - textblob – Fallback sentiment analysis
+  - faker – Dummy text generation
+  - prophet – Time-series stock price forecasting
 
 ---
 
 ## ⚙️ How It Works
-
 1. User selects a company
 2. System fetches:
-
-   * Live stock prices
-   * Financial news headlines
+   - Live stock prices
+   - Financial news headlines
 3. News is passed through **FinBERT** for sentiment analysis
 4. If FinBERT fails, **TextBlob** is used as backup
 5. Sentiment polarity and confidence scores are calculated
-6. Stock price vs sentiment trends are plotted
+6. **Stock prices are forecasted using Facebook Prophet**
+7. Stock price vs sentiment trends and predictions are plotted
+
 
 ---
 
