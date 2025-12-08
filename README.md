@@ -1,174 +1,115 @@
-# 🌐 Real-Time Industry Insight & Strategic Intelligence System
+# 📊 Market & News Sentiment Intelligence System (Infosys Internship)
 
-### 📊 AI-Powered Market Intelligence • LLM Summaries • Financial Sentiment • Forecasting • Alerts
+## 📌 Project Overview
 
----
+This project is developed as part of the **Infosys Springboard Internship**. The notebook builds a **Market & News Sentiment Intelligence System** that fetches real-time stock market data and financial news, performs sentiment analysis using **FinBERT with a safe fallback mechanism**, and visualizes the relationship between **market price trends and public sentiment**.
 
-## 🚀 Overview
-
-The **Real-Time Industry Insight & Strategic Intelligence System** is an AI-driven analytics platform designed to continuously ingest real-world financial + news + social media data and transform it into strategic insights. It integrates **LLMs (Gemini API)**, **Finance-tuned Transformers (FinBERT)**, predictive modeling, and real-time alerting to assist decision-makers with actionable intelligence.
-
-This system is built as part of the Infosys project for real-time industry intelligence.
+This project demonstrates the complete **data pipeline from data acquisition → NLP-based sentiment analysis → visualization**.
 
 ---
 
-## ✨ Key Features
+## 🎯 Objectives
 
-* **📥 Real-Time Data Ingestion** (market data, business news, tweets)
-* **🧹 Data Cleaning & Preprocessing** — pipelines for consistent and reproducible analytics
-* **🧠 Dual Sentiment Engine:**
-
-  * **Gemini API (LLM-based)** → contextual sentiment + business summaries
-  * **FinBERT (Hugging Face: ProsusAI/finbert)** → finance-specific sentiment classification
-* **📈 Predictive Modeling** using ARIMA / Prophet / LSTM (extensible)
-* **📊 Interactive Visual Dashboard** using Plotly
-* **🔔 Slack Alerts** triggered by sentiment shifts or market anomalies
-* **♻️ Modular Architecture** designed for scaling to multiple companies or industries
+* Fetch live stock market data using Yahoo Finance
+* Fetch financial news related to selected companies
+* Perform safe and reliable sentiment analysis using **FinBERT**
+* Provide fallback sentiment analysis using **TextBlob**
+* Compare **sentiment polarity vs stock price trends**
+* Display results using powerful visualizations
 
 ---
 
-## 🧠 Sentiment Analysis Engine
+## 🚀 Features
 
-This platform uses **two complementary models** to achieve robust sentiment evaluation:
-
-### **1️⃣ FinBERT — ProsusAI/finbert (Hugging Face)**
-
-FinBERT is a transformer model trained specifically on **financial text**, providing domain-accurate polarity predictions.
-
-**Advantages:**
-
-* Optimized for financial reports, market news, earnings calls
-* Much higher precision in finance context than generic LLMs
-* Fast inference; can run locally or on cloud
-
-**Use-case Examples:**
-
-* Market-moving news classification
-* Earnings-call transcript evaluation
-
-### **2️⃣ Gemini API — LLM-based Sentiment + Summaries**
-
-Gemini is used to:
-
-* Generate **structured sentiment outputs**
-* Provide **human-like summaries** of news & trends
-* Extract **themes, risk signals, opportunities**
-* Reduce noise and add interpretability
-
-**Advantages:**
-
-* Handles long-text + reasoning
-* Captures nuance missed by classifiers
-* Provides contextual insights and narratives
-
+* ✅ Real-time stock data fetching
+* ✅ Automated financial news extraction
+* ✅ FinBERT-based financial sentiment analysis
+* ✅ Safe fallback sentiment using TextBlob
+* ✅ Sentiment aggregation across multiple news articles
+* ✅ Market vs sentiment trend visualization
+* ✅ Fake data fallback when real news is unavailable
 
 ---
 
-## 🏗️ System Architecture
+## 🛠 Tech Stack
 
-```
-        ┌────────────┐
-        │  Sources   │
-        │  News API  │
-        │  Twitter   │
-        │ Price Data │
-        └──────┬─────┘
-               │
-        ┌──────▼──────┐
-        │  Ingestion  │
-        │  Pipeline   │
-        └──────┬──────┘
-               │
-    ┌──────────▼──────────┐
-    │ Preprocessing Layer │
-    └──────────┬──────────┘
-               │
-       ┌───────▼────────────┐
-       │ Dual Sentiment AI  │
-       │ FinBERT + Gemini   │
-       └───────┬────────────┘
-               │
-   ┌───────────▼─────────────┐
-   │   Forecasting Engine    │
-   └───────────┬─────────────┘
-               │
-   ┌───────────▼──────────────┐
-   │   Dashboard & Visuals    │
-   └───────────┬──────────────┘
-               │
-        ┌──────▼─────────┐
-        │ Alerts (Slack) │
-        └────────────────┘
-```
+* **Programming Language:** Python
+* **Libraries Used:**
 
+  * requests, BeautifulSoup – Web scraping
+  * pandas – Data processing
+  * matplotlib, seaborn – Data visualization
+  * yfinance – Stock market data
+  * wikipedia – Company information
+  * transformers – FinBERT sentiment model
+  * textblob – Fallback sentiment analysis
+  * faker – Dummy text generation
 
 ---
 
-## 🛠️ Installation & Setup
+## ⚙️ How It Works
 
-### 1️⃣ Clone the Repository
+1. User selects a company
+2. System fetches:
 
-```
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
-```
-
-### 2️⃣ Install Dependencies
-
-```
-pip install -r requirements.txt
-```
-
-### 3️⃣ Setup Environment Variables
-
-Create a `.env` file:
-
-```
-GEMINI_API_KEY=your_key_here
-SLACK_WEBHOOK_URL=your_webhook
-```
+   * Live stock prices
+   * Financial news headlines
+3. News is passed through **FinBERT** for sentiment analysis
+4. If FinBERT fails, **TextBlob** is used as backup
+5. Sentiment polarity and confidence scores are calculated
+6. Stock price vs sentiment trends are plotted
 
 ---
 
-## 🔮 Forecasting Engine
+## 📊 Output
 
-Planned & supported models:
-
-* **ARIMA** — statistical baseline
-* **LSTM** — non-linear time-series modeling
-
----
-
-## 📈 Dashboard & Visualization
-
-The system supports interactive charts:
-
-* Price trends
-* Sentiment over time (FinBERT + Gemini)
-* Volume & volatility
-* Theme extraction
-
-Plotly-based dashboard (can be migrated to Streamlit).
+* Sentiment polarity scores
+* Confidence score visualization
+* Market price vs sentiment trend graphs
 
 ---
 
-## 🔔 Real-Time Alerts
+## ▶️ How To Run
 
-Alerts trigger when:
-
-* Sentiment divergence exceeds threshold
-* Price deviates from forecast
-* Market-moving news is detected
-
-Delivered via Slack Webhooks.
+1. Open this notebook in **Google Colab**
+2. Enable **GPU runtime** (recommended for FinBERT)
+3. Run all cells sequentially
+4. Select a valid company name from the allowed list
 
 ---
 
-## 🤝 Contributors
+## 🔐 Security Practices
 
-* **Anshika Gupta**
-* **Gopichand**
-* **Janmejay**
-* **Vaishnavi**
+* No hardcoded API keys
+* Safe exception handling during NLP inference
+* Automatic fallback when model loading fails
 
+---
 
+## 🚧 Limitations
+
+* FinBERT requires high memory
+* CPU inference is slow
+* News scraping depends on website availability
+
+---
+
+## 🔮 Future Scope
+
+* Real-time dashboard using Streamlit
+* Integration with live trading APIs
+* Multi-language financial sentiment analysis
+* Deep learning-based price prediction
+
+---
+
+## 👩‍💻 Team Members
+
+* Anshika Gupta
+* Gopichand
+* Janmejay Singh
+* Vaishnavi
+
+---
+
+✅ *This project is part of Infosys Springboard Internship Program.*
