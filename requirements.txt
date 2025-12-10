@@ -1,0 +1,11 @@
+streamlit
+yfinance
+pandas
+numpy
+feedparser
+requests
+plotly
+statsmodels
+prophet
+google-generativeai
+wikipedia
