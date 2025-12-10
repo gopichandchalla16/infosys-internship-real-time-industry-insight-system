@@ -15,20 +15,86 @@ from statsmodels.tsa.arima.model import ARIMA
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-# =========================
-# GLOBAL CONFIG & SECRETS
-# =========================
+# =============================================================================
+# APP CONFIG & THEME (Infosys-style: blue/teal, clean corporate)
+# =============================================================================
 
 st.set_page_config(
-    page_title="Real-Time Industry Insight & Strategic Intelligence System",
+    page_title="Infosys InsightSphere - Strategic Intelligence",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Secrets from Streamlit or environment
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
-SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.getenv("SLACK_WEBHOOK_URL", ""))
-ALPHA_VANTAGE_API_KEY = st.secrets.get("ALPHA_VANTAGE_API_KEY", os.getenv("ALPHA_VANTAGE_API_KEY", ""))
+PRIMARY_BLUE = "#007CC3"
+DARK_BLUE = "#003B5C"
+TEAL = "#00A1A1"
+LIGHT_GREY = "#E5E5E5"
+BG_GREY = "#F5F7FA"
+WARNING_ORANGE = "#FF8C42"
+SUCCESS_GREEN = "#00A676"
+DANGER_RED = "#D7263D"
+
+CUSTOM_CSS = f"""
+<style>
+    .stApp {{
+        background-color: {BG_GREY};
+        font-family: "Roboto", "Segoe UI", sans-serif;
+    }}
+    .infobox-card {{
+        background: white;
+        border-radius: 12px;
+        padding: 16px 18px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border-left: 4px solid {PRIMARY_BLUE};
+        margin-bottom: 10px;
+    }}
+    .metric-card {{
+        background: white;
+        border-radius: 12px;
+        padding: 10px 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        border-top: 3px solid {PRIMARY_BLUE};
+    }}
+    .metric-title {{
+        font-size: 0.8rem;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }}
+    .metric-value {{
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: {DARK_BLUE};
+    }}
+    .metric-sub {{
+        font-size: 0.8rem;
+        color: #888;
+    }}
+    .signal-badge {{
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: white;
+    }}
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# =============================================================================
+# SECRETS & GLOBAL FLAGS
+# =============================================================================
+
+def get_secret(name: str, default: str = "") -> str:
+    try:
+        return st.secrets.get(name, os.getenv(name, default))
+    except Exception:
+        return os.getenv(name, default)
+
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
+SLACK_WEBHOOK_URL = get_secret("SLACK_WEBHOOK_URL")
+ALPHA_VANTAGE_API_KEY = get_secret("ALPHA_VANTAGE_API_KEY")
 
 # Prophet availability
 try:
@@ -53,40 +119,42 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
-# =========================
-# UTILITIES
-# =========================
-
 INVALID_COMPANY_KEYWORDS = {
     "abc", "xyz", "test", "testing", "demo", "sample",
     "qwerty", "asdf", "fake", "dummy", "123", "456"
 }
 
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
 
 def is_invalid_company_name(name: str) -> bool:
-    name_clean = name.strip().lower()
+    name_clean = (name or "").strip().lower()
+    if name_clean.isnumeric() or len(name_clean) < 2:
+        return True
     for bad in INVALID_COMPANY_KEYWORDS:
         if bad in name_clean:
             return True
-    if name_clean.isnumeric() or len(name_clean) < 2:
-        return True
     return False
 
 
 @st.cache_data(show_spinner=False)
 def search_ticker_by_company(company_name: str):
-    """Use Yahoo Finance search API to find a ticker."""
+    """Use Yahoo Finance search API to find a ticker for the given company name."""
     try:
         q = company_name.replace(" ", "+")
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}"
-        headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         for item in data.get("quotes", []):
             if item.get("quoteType") == "EQUITY":
                 symbol = item.get("symbol")
                 longname = item.get("longname") or item.get("shortname") or symbol
-                return symbol, longname
+                return symbol.upper(), longname
         return None, None
     except Exception:
         return None, None
@@ -105,11 +173,16 @@ def fetch_historical_data(ticker: str, period="1y", interval="1d") -> pd.DataFra
 @st.cache_data(show_spinner=False)
 def fetch_market_metrics(ticker: str) -> dict:
     t = yf.Ticker(ticker)
-
-    hist = t.history(period="5d")
-    last_price = float(hist["Close"].iloc[-1]) if not hist.empty else None
-
+    last_price = None
     market_cap = None
+
+    try:
+        hist = t.history(period="5d")
+        if not hist.empty:
+            last_price = float(hist["Close"].iloc[-1])
+    except Exception:
+        pass
+
     try:
         info = t.info
         market_cap = info.get("marketCap")
@@ -124,46 +197,42 @@ def fetch_google_news(query: str, max_items: int = 15) -> pd.DataFrame:
     q = query.replace(" ", "+")
     url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
     feed = feedparser.parse(url)
-
     rows = []
     for entry in feed.entries[:max_items]:
         title = entry.get("title", "").strip()
         summary = entry.get("summary", "").strip()
         link = entry.get("link", "").strip()
-
         try:
             pub = datetime(*entry.published_parsed[:6])
         except Exception:
             pub = None
-
         text = f"{title}. {summary}".replace("\n", " ").strip()
-
-        rows.append({
-            "source": "news",
-            "title": title,
-            "summary": summary,
-            "text": text,
-            "link": link,
-            "published_at": pub
-        })
-
+        rows.append(
+            {
+                "source": "news",
+                "title": title,
+                "summary": summary,
+                "text": text,
+                "link": link,
+                "published_at": pub,
+            }
+        )
     return pd.DataFrame(rows)
 
 
 def generate_mock_tweets(company: str, days=5, posts_per_day=6) -> pd.DataFrame:
-    POS_PHRASES = [
+    POS = [
         "strong earnings", "bullish momentum", "positive guidance",
         "analysts optimistic", "record demand", "growth accelerating"
     ]
-    NEG_PHRASES = [
+    NEG = [
         "weak outlook", "bearish signals", "regulatory issues",
         "market concerns", "slowing demand", "negative pressure"
     ]
-    NEUTRAL_PHRASES = [
+    NEU = [
         "sideways movement", "no major change", "watching closely",
         "stable performance", "in line with expectations"
     ]
-
     now = datetime.utcnow()
     rows = []
     for d in range(days):
@@ -171,21 +240,22 @@ def generate_mock_tweets(company: str, days=5, posts_per_day=6) -> pd.DataFrame:
         for _ in range(posts_per_day):
             r = random.random()
             if r < 0.33:
-                phrase = random.choice(POS_PHRASES); label = "positive"
+                phrase = random.choice(POS); label = "positive"
             elif r < 0.66:
-                phrase = random.choice(NEG_PHRASES); label = "negative"
+                phrase = random.choice(NEG); label = "negative"
             else:
-                phrase = random.choice(NEUTRAL_PHRASES); label = "neutral"
-
+                phrase = random.choice(NEU); label = "neutral"
             text = f"{company} shows {phrase} today. ({label})"
-            rows.append({
-                "source": "twitter",
-                "title": "",
-                "summary": "",
-                "text": text,
-                "link": "",
-                "published_at": day - timedelta(minutes=random.randint(0, 600))
-            })
+            rows.append(
+                {
+                    "source": "twitter",
+                    "title": "",
+                    "summary": "",
+                    "text": text,
+                    "link": "",
+                    "published_at": day - timedelta(minutes=random.randint(0, 600)),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -197,13 +267,14 @@ def build_corpus(news_df: pd.DataFrame, tweets_df: pd.DataFrame) -> pd.DataFrame
     return df
 
 
-# ===== Sentiment Engine =====
+# =============================================================================
+# SENTIMENT ENGINE
+# =============================================================================
 
 POS_WORDS = [
     "growth", "strong", "bullish", "positive", "optimistic",
     "uptrend", "profit", "beats", "high demand", "surge", "record", "outperform"
 ]
-
 NEG_WORDS = [
     "weak", "bearish", "negative", "downtrend", "loss", "regulatory",
     "lawsuit", "slowing", "fraud", "concern", "volatility", "pressure"
@@ -225,7 +296,6 @@ def local_sentiment(text: str) -> int:
 def gemini_sentiment(text: str) -> int:
     if not GEMINI_ENABLED:
         return local_sentiment(text)
-
     try:
         prompt = f"""
         You are a financial sentiment model.
@@ -262,9 +332,11 @@ def aggregate_sentiment(corpus: pd.DataFrame) -> float:
     return float(max(-100, min(100, corpus["sentiment"].mean())))
 
 
-# ===== Forecasting Engine =====
+# =============================================================================
+# FORECASTING ENGINE (PROPHET → ARIMA)
+# =============================================================================
 
-def prophet_forecast(market_df: pd.DataFrame, periods: int = 7) -> pd.DataFrame | None:
+def prophet_forecast(market_df: pd.DataFrame, periods: int = 7):
     if not PROPHET_AVAILABLE:
         return None
     try:
@@ -279,7 +351,7 @@ def prophet_forecast(market_df: pd.DataFrame, periods: int = 7) -> pd.DataFrame 
         return None
 
 
-def arima_forecast(market_df: pd.DataFrame, periods: int = 7) -> pd.DataFrame | None:
+def arima_forecast(market_df: pd.DataFrame, periods: int = 7):
     try:
         series = market_df.set_index("date")["Close"].asfreq("D").ffill()
         model = ARIMA(series, order=(1, 1, 1))
@@ -288,18 +360,20 @@ def arima_forecast(market_df: pd.DataFrame, periods: int = 7) -> pd.DataFrame | 
         mean = res.predicted_mean
         conf = res.conf_int()
 
-        out = pd.DataFrame({
-            "date": mean.index.to_pydatetime(),
-            "yhat": mean.values,
-            "yhat_lower": conf.iloc[:, 0].values,
-            "yhat_upper": conf.iloc[:, 1].values,
-        })
+        out = pd.DataFrame(
+            {
+                "date": mean.index.to_pydatetime(),
+                "yhat": mean.values,
+                "yhat_lower": conf.iloc[:, 0].values,
+                "yhat_upper": conf.iloc[:, 1].values,
+            }
+        )
         return out
     except Exception:
         return None
 
 
-def build_forecast(market_df: pd.DataFrame, periods: int = 7) -> tuple[pd.DataFrame, str]:
+def build_forecast(market_df: pd.DataFrame, periods: int = 7):
     fc = prophet_forecast(market_df, periods)
     if fc is not None:
         return fc, "Prophet"
@@ -309,7 +383,9 @@ def build_forecast(market_df: pd.DataFrame, periods: int = 7) -> tuple[pd.DataFr
     raise RuntimeError("Both Prophet and ARIMA forecasting failed.")
 
 
-# ===== Trading Signal =====
+# =============================================================================
+# SIGNAL ENGINE
+# =============================================================================
 
 def compute_projected_move(market_df: pd.DataFrame, forecast_df: pd.DataFrame) -> dict:
     last_price = float(market_df["Close"].iloc[-1])
@@ -320,7 +396,7 @@ def compute_projected_move(market_df: pd.DataFrame, forecast_df: pd.DataFrame) -
         "last_price": last_price,
         "proj_price": proj_price,
         "abs_change": abs_change,
-        "pct_change": pct_change
+        "pct_change": pct_change,
     }
 
 
@@ -347,7 +423,9 @@ def compute_signal(projected_move: dict, sentiment_score: float) -> dict:
     return {"signal": sig, "reason": reason, "pct_change": pct, "sentiment": sentiment}
 
 
-# ===== Slack Alerts =====
+# =============================================================================
+# SLACK ALERTS
+# =============================================================================
 
 def send_slack_alert(
     webhook_url: str,
@@ -356,7 +434,7 @@ def send_slack_alert(
     signal_info: dict,
     projected_move: dict,
     sentiment_score: float,
-    model_type: str
+    model_type: str,
 ):
     lines = [
         f"*Strategic Intelligence Alert* for *{company}* ({ticker})",
@@ -369,21 +447,23 @@ def send_slack_alert(
     payload = {"text": "\n".join(lines)}
 
     if not webhook_url:
-        st.info("Slack webhook not configured. Printing alert payload below:")
+        st.info("Slack webhook not configured. Alert payload preview:")
         st.code(payload, language="json")
         return
 
     try:
         resp = requests.post(webhook_url, json=payload, timeout=5)
         if resp.status_code != 200:
-            st.warning(f"Slack error {resp.status_code}. Payload printed instead.")
+            st.warning(f"Slack error {resp.status_code}. Printing payload:")
             st.code(payload, language="json")
     except Exception as e:
-        st.warning(f"Slack alert error: {e}. Payload printed instead.")
+        st.warning(f"Slack alert error: {e}. Printing payload instead:")
         st.code(payload, language="json")
 
 
-# ===== Company Profile =====
+# =============================================================================
+# COMPANY PROFILE
+# =============================================================================
 
 @st.cache_data(show_spinner=False)
 def fetch_company_profile(ticker: str) -> dict:
@@ -400,7 +480,7 @@ def fetch_company_profile(ticker: str) -> dict:
         "country": info.get("country"),
         "website": info.get("website"),
         "employees": info.get("fullTimeEmployees"),
-        "summary": info.get("longBusinessSummary")
+        "summary": info.get("longBusinessSummary"),
     }
 
 
@@ -416,39 +496,82 @@ def fetch_wikipedia_summary(name: str) -> str:
         return "Wikipedia summary unavailable."
 
 
-# =========================
-# STREAMLIT PAGES
-# =========================
+# =============================================================================
+# UI HELPERS
+# =============================================================================
+
+def metric_card(title: str, value: str, subtitle: str = ""):
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">{title}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-sub">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def signal_badge(signal: str) -> str:
+    sig = (signal or "").upper()
+    if sig == "BUY":
+        color = SUCCESS_GREEN
+    elif sig == "SELL":
+        color = DANGER_RED
+    else:
+        color = WARNING_ORANGE
+    return f'<span class="signal-badge" style="background:{color};"> {sig} </span>'
+
+
+# =============================================================================
+# PAGES
+# =============================================================================
 
 def page_company_overview(state):
-    st.header("🏢 Company Overview")
+    st.markdown("### 🧭 Company Overview")
 
-    col1, col2 = st.columns([2, 3])
+    col1, col2 = st.columns([1.4, 2.0])
+
     with col1:
-        st.subheader(f"{state['company_name']} ({state['ticker']})")
+        st.markdown(
+            f"""
+            <div class="infobox-card">
+                <h3 style="margin-bottom:4px;">{state['company_name']} ({state['ticker']})</h3>
+                <div style="font-size:0.9rem;color:#666;">Real-Time Strategic Intelligence Profile</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         profile = fetch_company_profile(state["ticker"])
         wiki_summary = fetch_wikipedia_summary(state["company_name"])
 
-        st.markdown("**Sector:** " + str(profile.get("sector", "N/A")))
-        st.markdown("**Industry:** " + str(profile.get("industry", "N/A")))
-        st.markdown("**Country:** " + str(profile.get("country", "N/A")))
-        st.markdown("**Employees:** " + str(profile.get("employees", "N/A")))
+        st.markdown("#### Key Metadata")
+        meta_cols = st.columns(2)
+        with meta_cols[0]:
+            st.markdown(f"**Sector:** {profile.get('sector', 'N/A')}")
+            st.markdown(f"**Industry:** {profile.get('industry', 'N/A')}")
+        with meta_cols[1]:
+            st.markdown(f"**Country:** {profile.get('country', 'N/A')}")
+            st.markdown(f"**Employees:** {profile.get('employees', 'N/A')}")
+
         website = profile.get("website")
         if website:
             st.markdown(f"**Website:** [{website}]({website})")
 
     with col2:
-        st.subheader("Wikipedia Summary")
+        st.markdown("#### Wikipedia Summary")
         st.write(wiki_summary)
 
-        st.subheader("Business Overview (Yahoo Finance)")
+        st.markdown("#### Business Overview (Yahoo Finance)")
         st.write(profile.get("summary", "Not available."))
 
 
 def page_market_forecast(state):
-    st.header("📊 Market Data & 7-Day Forecast")
+    st.markdown("### 📊 Market Data & 7-Day Forecast")
 
-    with st.spinner("Fetching market data..."):
+    with st.spinner("Fetching market data and generating forecast..."):
         market_df = fetch_historical_data(state["ticker"])
         metrics = fetch_market_metrics(state["ticker"])
         fc_df, model_type = build_forecast(market_df, periods=7)
@@ -458,130 +581,233 @@ def page_market_forecast(state):
     state["forecast_model"] = model_type
     state["market_metrics"] = metrics
 
-    st.subheader("Historical Price")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=market_df["date"], y=market_df["Close"],
-        mode="lines", name="Close"
-    ))
-    fig.update_layout(height=350, xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("7-Day Forecast")
-    st.write(f"Model used: **{model_type}**")
-    st.dataframe(fc_df.reset_index(drop=True))
-
     last_price = float(market_df["Close"].iloc[-1])
     proj_price = float(fc_df["yhat"].iloc[-1])
-    pct_change = (proj_price - last_price) / last_price * 100.0
+    pct_change = (proj_price - last_price) / last_price * 100.0 if last_price != 0 else 0.0
 
-    st.markdown(f"**Current Price:** ${last_price:.2f}")
-    st.markdown(f"**Forecasted Price (7D):** ${proj_price:.2f}")
-    st.markdown(f"**Projected 7-Day Change:** {pct_change:.2f}%")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_card("Current Price", f"${last_price:.2f}", "Latest close")
+    with c2:
+        metric_card("Forecasted Price (7D)", f"${proj_price:.2f}", f"Model: {model_type}")
+    with c3:
+        move_arrow = "▲" if pct_change > 0 else ("▼" if pct_change < 0 else "➜")
+        metric_card("Projected 7D Move", f"{pct_change:.2f}%", move_arrow)
+
+    st.markdown("#### Historical Price vs Forecast")
+
+    hist_dates = market_df["date"]
+    hist_close = market_df["Close"]
+
+    last_hist_date = hist_dates.max()
+    future_fc = fc_df[fc_df["date"] > last_hist_date].copy()
+    if future_fc.empty:
+        future_fc = fc_df.copy()
+
+    fc_dates = future_fc["date"]
+    fc_mean = future_fc["yhat"]
+    fc_low = future_fc["yhat_lower"]
+    fc_high = future_fc["yhat_upper"]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=hist_dates,
+            y=hist_close,
+            mode="lines",
+            name="Historical Close",
+            line=dict(color=DARK_BLUE),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=fc_dates,
+            y=fc_mean,
+            mode="lines+markers",
+            name="Forecast (7D)",
+            line=dict(color=TEAL, width=2),
+            marker=dict(size=6),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=list(fc_dates) + list(fc_dates[::-1]),
+            y=list(fc_high) + list(fc_low[::-1]),
+            fill="toself",
+            fillcolor="rgba(0, 124, 195, 0.12)",
+            line=dict(color="rgba(0,0,0,0)"),
+            hoverinfo="skip",
+            name="Forecast CI",
+        )
+    )
+
+    fig.update_layout(
+        height=420,
+        margin=dict(l=40, r=40, t=40, b=40),
+        xaxis_title="Date",
+        yaxis_title="Price",
+        plot_bgcolor="white",
+        paper_bgcolor=BG_GREY,
+    )
+    fig.update_xaxes(showgrid=True, gridcolor=LIGHT_GREY)
+    fig.update_yaxes(showgrid=True, gridcolor=LIGHT_GREY)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("#### Raw Forecast Data")
+    st.dataframe(fc_df.reset_index(drop=True))
 
 
 def page_sentiment_analysis(state):
-    st.header("📰 News & Sentiment Analysis")
+    st.markdown("### 🧠 News & Sentiment Analysis")
 
     company = state["company_name"]
     ticker = state["ticker"]
 
-    with st.spinner("Fetching news and generating mock social sentiment..."):
+    with st.spinner("Fetching news and synthesizing sentiment..."):
         news_df = fetch_google_news(f"{company} {ticker} stock", max_items=10)
         tweets_df = generate_mock_tweets(company, days=5, posts_per_day=6)
         corpus = build_corpus(news_df, tweets_df)
-        corpus_with_sent = apply_sentiment(corpus)
-        agg_sent = aggregate_sentiment(corpus_with_sent)
+        corpus_sent = apply_sentiment(corpus)
+        agg_sent = aggregate_sentiment(corpus_sent)
 
     state["news_df"] = news_df
     state["tweets_df"] = tweets_df
-    state["corpus_df"] = corpus_with_sent
+    state["corpus_df"] = corpus_sent
     state["agg_sentiment"] = agg_sent
 
-    st.subheader("Recent News (Top 5)")
+    c1, c2 = st.columns([1, 2])
+
+    with c1:
+        metric_card("Aggregate Sentiment", f"{agg_sent:.2f}", "Range: -100 to 100")
+
+    with c2:
+        st.markdown("#### Sentiment Gauge")
+        gauge_fig = go.Figure(
+            go.Indicator(
+                mode="gauge+number",
+                value=agg_sent,
+                title={"text": "Market Sentiment"},
+                gauge={
+                    "axis": {"range": [-100, 100]},
+                    "bar": {"color": DARK_BLUE},
+                    "steps": [
+                        {"range": [-100, -25], "color": "rgba(215, 38, 61, 0.35)"},
+                        {"range": [-25, 25], "color": "rgba(200, 200, 200, 0.5)"},
+                        {"range": [25, 100], "color": "rgba(0, 166, 118, 0.35)"},
+                    ],
+                },
+            )
+        )
+        gauge_fig.update_layout(height=260, margin=dict(l=40, r=40, t=40, b=20))
+        st.plotly_chart(gauge_fig, use_container_width=True)
+
+    st.markdown("#### Recent News (Top 5)")
     if not news_df.empty:
         st.dataframe(news_df[["title", "published_at", "link"]].head(5))
     else:
-        st.write("No news found.")
+        st.info("No news articles found.")
 
-    st.subheader("Sample Sentiment Corpus")
-    st.dataframe(corpus_with_sent.head(10)[["source", "published_at", "text", "sentiment"]])
-
-    st.markdown(f"### Aggregate Sentiment Score: **{agg_sent:.2f}** (−100 to 100)")
+    st.markdown("#### Sentiment Corpus (Sample)")
+    st.dataframe(corpus_sent.head(12)[["source", "published_at", "text", "sentiment"]])
 
 
 def page_competitor_insights(state):
-    st.header("🏁 Competitor Insights")
+    st.markdown("### 🏁 Competitor Insights")
 
     base_ticker = state["ticker"]
+    st.markdown(
+        f"Use this view to benchmark **{base_ticker}** against peers on returns and sentiment."
+    )
 
     competitor_input = st.text_input(
         "Enter competitor tickers (comma-separated, e.g., NIO, F, GM):",
         value="",
-        help="Optional: Add peer tickers to compare sentiment and returns."
+        help="Optional: Add peer tickers to compare sentiment and 30D returns.",
     )
 
-    if not competitor_input.strip():
-        st.info("Enter at least one competitor ticker to see insights.")
+    tickers = [t.strip().upper() for t in competitor_input.split(",") if t.strip()]
+    if not tickers:
+        st.info("Enter at least one competitor ticker above to see insights.")
         return
 
-    tickers = [t.strip().upper() for t in competitor_input.split(",") if t.strip()]
-
     rows = []
-    for tkr in tickers:
-        try:
-            df = fetch_historical_data(tkr, period="3mo")
-            if len(df) < 5:
+    with st.spinner("Fetching competitor data..."):
+        for tkr in tickers:
+            try:
+                df = fetch_historical_data(tkr, period="3mo")
+                if len(df) < 10:
+                    continue
+                if len(df) > 21:
+                    ret_30 = (df["Close"].iloc[-1] / df["Close"].iloc[-21] - 1) * 100.0
+                else:
+                    ret_30 = np.nan
+
+                news_df = fetch_google_news(f"{tkr} stock", max_items=5)
+                tweets_df = generate_mock_tweets(tkr, days=3, posts_per_day=4)
+                corpus = build_corpus(news_df, tweets_df)
+                corpus_sent = apply_sentiment(corpus)
+                agg_sent = aggregate_sentiment(corpus_sent)
+
+                rows.append(
+                    {
+                        "Ticker": tkr,
+                        "30D Return (%)": ret_30,
+                        "Sentiment Score": agg_sent,
+                        "News Count": int((corpus_sent["source"] == "news").sum()),
+                    }
+                )
+            except Exception:
                 continue
-            ret_30 = (df["Close"].iloc[-1] / df["Close"].iloc[-21] - 1) * 100.0 if len(df) > 21 else np.nan
-            news_df = fetch_google_news(f"{tkr} stock", max_items=5)
-            tweets_df = generate_mock_tweets(tkr, days=3, posts_per_day=4)
-            corpus = build_corpus(news_df, tweets_df)
-            corpus_sent = apply_sentiment(corpus)
-            agg_sent = aggregate_sentiment(corpus_sent)
-            rows.append({
-                "Ticker": tkr,
-                "30D Return (%)": ret_30,
-                "Sentiment Score": agg_sent,
-                "News Count": (corpus_sent["source"] == "news").sum()
-            })
-        except Exception:
-            continue
 
     if not rows:
         st.warning("No valid competitor data could be fetched.")
         return
 
     comp_df = pd.DataFrame(rows)
-    st.subheader("Competitor Table")
+    st.markdown("#### Competitor Summary Table")
     st.dataframe(comp_df)
 
-    st.subheader("Positioning Map: Sentiment vs 30D Return")
+    st.markdown("#### Positioning Map: Sentiment vs 30-Day Return")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=comp_df["Sentiment Score"],
-        y=comp_df["30D Return (%)"],
-        mode="markers+text",
-        text=comp_df["Ticker"],
-        textposition="top center"
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=comp_df["Sentiment Score"],
+            y=comp_df["30D Return (%)"],
+            mode="markers+text",
+            text=comp_df["Ticker"],
+            textposition="top center",
+            marker=dict(size=14, color=PRIMARY_BLUE),
+        )
+    )
     fig.update_layout(
         xaxis_title="Sentiment Score (−100 to 100)",
         yaxis_title="30-Day Return (%)",
-        height=400
+        height=420,
+        plot_bgcolor="white",
+        paper_bgcolor=BG_GREY,
     )
+    fig.update_xaxes(showgrid=True, gridcolor=LIGHT_GREY)
+    fig.update_yaxes(showgrid=True, gridcolor=LIGHT_GREY)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def page_dashboard_and_alerts(state):
-    st.header("📈 Executive Dashboard & Alerts")
+    st.markdown("### 📈 Executive Dashboard & Alerts")
 
-    # Ensure dependencies from other pages
-    required_keys = ["market_df", "forecast_df", "corpus_df", "agg_sentiment", "market_metrics", "forecast_model"]
+    required_keys = [
+        "market_df",
+        "forecast_df",
+        "corpus_df",
+        "agg_sentiment",
+        "market_metrics",
+        "forecast_model",
+    ]
     missing = [k for k in required_keys if k not in state]
     if missing:
         st.warning(
-            "Missing data for dashboard. Please visit Market Forecast and Sentiment Analysis pages first."
+            "Some analytical components are missing. "
+            "Please visit **Market & Forecast** and **Sentiment Analysis** pages first."
         )
         return
 
@@ -596,28 +822,24 @@ def page_dashboard_and_alerts(state):
     signal_info = compute_signal(projected_move, agg_sentiment)
     state["signal_info"] = signal_info
 
-    st.subheader("Strategic Intelligence Summary")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Current Price", f"${projected_move['last_price']:.2f}")
-    with col2:
-        st.metric("Projected Price (7D)", f"${projected_move['proj_price']:.2f}")
-    with col3:
-        st.metric("Projected Move (7D)", f"{projected_move['pct_change']:.2f}%")
-
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        st.metric("Aggregate Sentiment", f"{agg_sentiment:.2f}")
-    with col5:
-        st.metric("Signal", signal_info["signal"])
-    with col6:
-        st.metric("Forecast Model", model_type)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        metric_card("Current Price", f"${projected_move['last_price']:.2f}")
+    with c2:
+        metric_card("Forecasted Price (7D)", f"${projected_move['proj_price']:.2f}", model_type)
+    with c3:
+        move_arrow = "▲" if projected_move["pct_change"] > 0 else ("▼" if projected_move["pct_change"] < 0 else "➜")
+        metric_card("Projected 7D Move", f"{projected_move['pct_change']:.2f}%", move_arrow)
+    with c4:
+        st.markdown(
+            signal_badge(signal_info["signal"]),
+            unsafe_allow_html=True,
+        )
 
     st.markdown(f"**Rationale:** {signal_info['reason']}")
 
-    # ---- Dashboard Plot ----
-    st.subheader("Executive Dashboard")
+    st.markdown("---")
+    st.markdown("#### Strategic Intelligence Dashboard")
 
     hist_dates = market_df["date"]
     hist_close = market_df["Close"]
@@ -632,7 +854,6 @@ def page_dashboard_and_alerts(state):
     fc_low = future_fc["yhat_lower"]
     fc_high = future_fc["yhat_upper"]
 
-    # Market cap formatting
     mc_raw = market_metrics.get("market_cap")
     if mc_raw:
         try:
@@ -663,32 +884,47 @@ def page_dashboard_and_alerts(state):
             "Aggregate Sentiment Gauge",
             "Executive Metrics Summary",
             "Risk Profile (Synthetic Indices)",
-            "Sentiment Breakdown"
-        )
+            "Sentiment Breakdown",
+        ),
     )
 
     # Price chart
     fig.add_trace(
-        go.Scatter(x=hist_dates, y=hist_close, mode="lines", name="Historical Close"),
-        row=1, col=1
+        go.Scatter(
+            x=hist_dates,
+            y=hist_close,
+            mode="lines",
+            name="Historical Close",
+            line=dict(color=DARK_BLUE),
+        ),
+        row=1,
+        col=1,
     )
     fig.add_trace(
-        go.Scatter(x=fc_dates, y=fc_mean, mode="lines+markers", name="Forecast (7D)"),
-        row=1, col=1
+        go.Scatter(
+            x=fc_dates,
+            y=fc_mean,
+            mode="lines+markers",
+            name="Forecast (7D)",
+            line=dict(color=TEAL),
+            marker=dict(size=6),
+        ),
+        row=1,
+        col=1,
     )
     fig.add_trace(
         go.Scatter(
             x=list(fc_dates) + list(fc_dates[::-1]),
             y=list(fc_high) + list(fc_low[::-1]),
             fill="toself",
-            fillcolor="rgba(0, 100, 255, 0.18)",
+            fillcolor="rgba(0, 124, 195, 0.18)",
             line=dict(color="rgba(0,0,0,0)"),
             hoverinfo="skip",
-            name="Forecast CI"
+            name="Forecast CI",
         ),
-        row=1, col=1
+        row=1,
+        col=1,
     )
-
     fig.update_xaxes(title_text="Date", row=1, col=1)
     fig.update_yaxes(title_text="Price", row=1, col=1)
 
@@ -700,11 +936,11 @@ def page_dashboard_and_alerts(state):
             title={"text": "Sentiment (−100 to 100)"},
             gauge={
                 "axis": {"range": [-100, 100]},
-                "bar": {"color": "darkblue"},
+                "bar": {"color": DARK_BLUE},
                 "steps": [
-                    {"range": [-100, -25], "color": "rgba(255,0,0,0.3)"},
-                    {"range": [-25, 25], "color": "rgba(200,200,200,0.4)"},
-                    {"range": [25, 100], "color": "rgba(0,200,0,0.3)"},
+                    {"range": [-100, -25], "color": "rgba(215, 38, 61, 0.35)"},
+                    {"range": [-25, 25], "color": "rgba(200,200,200,0.45)"},
+                    {"range": [25, 100], "color": "rgba(0,166,118,0.35)"},
                 ],
                 "threshold": {
                     "line": {"color": "black", "width": 3},
@@ -713,7 +949,8 @@ def page_dashboard_and_alerts(state):
                 },
             },
         ),
-        row=2, col=1,
+        row=2,
+        col=1,
     )
 
     # Executive table
@@ -730,22 +967,26 @@ def page_dashboard_and_alerts(state):
     ]
     fig.add_trace(
         go.Table(
-            header=dict(values=metrics_header, fill_color="lightgrey", align="left"),
+            header=dict(values=metrics_header, fill_color=LIGHT_GREY, align="left"),
             cells=dict(values=list(zip(*metrics_rows)), align="left"),
         ),
-        row=2, col=2,
+        row=2,
+        col=2,
     )
 
-    # Risk indices (simple)
+    # Risk indices
     window_df = market_df.tail(60)
     if len(window_df) > 1:
         returns = window_df["Close"].pct_change().dropna()
         price_vol = float(returns.std() * np.sqrt(252) * 100.0)
     else:
         price_vol = 0.0
-
     ci_width = float((fc_high - fc_low).mean()) if len(fc_high) else 0.0
-    forecast_uncertainty = (ci_width / projected_move["proj_price"] * 100.0) if projected_move["proj_price"] != 0 else 0.0
+    forecast_uncertainty = (
+        (ci_width / projected_move["proj_price"] * 100.0)
+        if projected_move["proj_price"] != 0
+        else 0.0
+    )
     sent_vol = float(corpus_df["sentiment"].std()) if len(corpus_df) > 1 else 0.0
     news_count = int((corpus_df["source"] == "news").sum()) if "source" in corpus_df.columns else 0
 
@@ -756,10 +997,10 @@ def page_dashboard_and_alerts(state):
         max(0.0, min(100.0, abs(sent_vol))),
         max(0.0, min(100.0, news_count * 5.0)),
     ]
-
     fig.add_trace(
-        go.Bar(x=risk_labels, y=risk_values, name="Risk Indices"),
-        row=3, col=1,
+        go.Bar(x=risk_labels, y=risk_values, name="Risk Indices", marker_color=PRIMARY_BLUE),
+        row=3,
+        col=1,
     )
     fig.update_yaxes(title_text="Relative Risk (0–100)", row=3, col=1)
 
@@ -785,47 +1026,54 @@ def page_dashboard_and_alerts(state):
     ]
     fig.add_trace(
         go.Table(
-            header=dict(values=sent_table_header, fill_color="lightgrey", align="left"),
+            header=dict(values=sent_table_header, fill_color=LIGHT_GREY, align="left"),
             cells=dict(values=list(zip(*sent_table_rows)), align="left"),
         ),
-        row=3, col=2,
+        row=3,
+        col=2,
     )
 
-    # Layout + signal badge
     fig.update_layout(
         height=1000,
         showlegend=False,
+        margin=dict(l=40, r=40, t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor=BG_GREY,
         title=f"Strategic Intelligence Dashboard — {state['company_name']} ({state['ticker']})",
-        margin=dict(l=40, r=40, t=80, b=40),
     )
 
-    # Signal badge annotation
-    sig_col = "orange"
+    sig_color = WARNING_ORANGE
     if signal_info["signal"] == "BUY":
-        sig_col = "green"
+        sig_color = SUCCESS_GREEN
     elif signal_info["signal"] == "SELL":
-        sig_col = "red"
+        sig_color = DANGER_RED
 
     fig.add_annotation(
         xref="paper",
         yref="paper",
         x=0.01,
-        y=1.1,
+        y=1.12,
         text=f"Signal: {signal_info['signal']}",
         showarrow=False,
-        font=dict(size=16, color="white"),
+        font=dict(size=14, color="white"),
         align="left",
-        bordercolor=sig_col,
+        bordercolor=sig_color,
         borderwidth=2,
         borderpad=4,
-        bgcolor=sig_col,
-        opacity=0.9,
+        bgcolor=sig_color,
+        opacity=0.95,
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Slack Alert")
-    if st.button("Send Slack Alert"):
+    st.markdown("---")
+    st.markdown("#### Slack Alert")
+
+    st.write(
+        "Send a real-time signal notification to your configured Slack channel. "
+        "If no webhook is configured, the payload will be printed instead."
+    )
+    if st.button("Send Slack Alert Now", type="primary"):
         send_slack_alert(
             SLACK_WEBHOOK_URL,
             state["company_name"],
@@ -838,12 +1086,20 @@ def page_dashboard_and_alerts(state):
         st.success("Slack alert processed (or printed as fallback).")
 
 
-# =========================
+# =============================================================================
 # MAIN APP LAYOUT
-# =========================
+# =============================================================================
 
 def main():
-    st.sidebar.title("Real-Time Strategic Intelligence")
+    st.sidebar.markdown(
+        f"""
+        <h2 style="color:{PRIMARY_BLUE};margin-bottom:0;">Infosys InsightSphere</h2>
+        <div style="font-size:0.8rem;color:#666;margin-bottom:1rem;">
+        Real-Time Industry Insight & Strategic Intelligence System
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     default_company = "Tesla, Inc."
     default_ticker = "TSLA"
@@ -855,26 +1111,31 @@ def main():
         ticker = ticker_input.strip().upper()
         company_name = company_input.strip() or default_company
     else:
-        # Validate company
         if is_invalid_company_name(company_input):
-            st.sidebar.error("Invalid/fake company name detected. Using default (Tesla, Inc.).")
+            st.sidebar.error("Invalid or test-like company name. Using default: Tesla, Inc. (TSLA)")
             company_name = default_company
             ticker = default_ticker
         else:
             sym, longname = search_ticker_by_company(company_input)
             if not sym:
-                st.sidebar.warning("Could not find a valid ticker. Using default (TSLA).")
+                st.sidebar.warning("Could not resolve ticker. Falling back to TSLA (Tesla, Inc.).")
                 company_name = default_company
                 ticker = default_ticker
             else:
-                ticker = sym.upper()
+                ticker = sym
                 company_name = longname or company_input
 
-    st.sidebar.markdown(f"**Using:** {company_name} ({ticker})")
+    st.sidebar.markdown(f"**Using:** {company_name} (`{ticker}`)")
 
     page = st.sidebar.radio(
         "Navigation",
-        ["Company Overview", "Market & Forecast", "Sentiment Analysis", "Competitor Insights", "Dashboard & Alerts"],
+        [
+            "Company Overview",
+            "Market & Forecast",
+            "Sentiment Analysis",
+            "Competitor Insights",
+            "Dashboard & Alerts",
+        ],
     )
 
     state = st.session_state
