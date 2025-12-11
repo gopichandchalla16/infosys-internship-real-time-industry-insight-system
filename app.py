@@ -169,7 +169,7 @@ def fetch_google_news_rss(company: str, symbol: str, max_items: int = 8) -> pd.D
                 "source": "google_news",
                 "title": getattr(entry, "title", ""),
                 "summary": getattr(entry, "summary", ""),
-                "text": f\"{getattr(entry,'title','')}. {getattr(entry,'summary','')}\",
+                "text": f"{getattr(entry,'title','')}. {getattr(entry,'summary','')}",
                 "link": getattr(entry, "link", ""),
                 "published_at": None
             })
