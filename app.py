@@ -478,6 +478,21 @@ def progress_bar(completed: int, total: int):
     st.progress(progress)
     st.markdown(f"**Progress:** {completed}/{total} steps complete")
 
+# Secrets Validation Function (Newly Added)
+def validate_secrets():
+    """Non-blocking validation of core secrets with sidebar feedback."""
+    warnings = []
+    if not GEMINI_API_KEY:
+        warnings.append("⚠️ Add GEMINI_API_KEY for LLM sentiment.")
+    if not ALPHA_VANTAGE_API_KEY:
+        warnings.append("⚠️ Add ALPHA_VANTAGE_API_KEY for enriched news/fundamentals.")
+    if not SLACK_WEBHOOK_URL:
+        warnings.append("⚠️ Add SLACK_WEBHOOK_URL for alerts (previews work).")
+    if warnings:
+        st.sidebar.warning("**Secrets Check:** " + " | ".join(warnings))
+    else:
+        st.sidebar.success("✅ All secrets configured!")
+
 # Pages
 def page_company_overview(state):
     st.subheader("🏢 Company Profile")
@@ -682,6 +697,7 @@ def page_dashboard(state):
 # Main App
 def main():
     header()
+    validate_secrets()  # NEW: Secrets validation on load
     company_name_input, ticker_input, auto_alert = sidebar_inputs()
     st.session_state['auto_alert'] = auto_alert
     try:
