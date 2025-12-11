@@ -9,111 +9,104 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 import requests
 
-# ========================= CONFIG =========================
-st.set_page_config(page_title="InsightSphere", layout="wide", page_icon="rocket")
+# ========================= PAGE CONFIG =========================
+st.set_page_config(page_title="InsightSphere", layout="wide", page_icon="chart_with_upwards_trend")
 
-# ========================= SECRETS (FIXED!) =========================
+# ========================= SECRETS =========================
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    SLACK_URL = st.secrets["SLACK_WEBHOOK_URL"]
-except Exception as e:
-    st.error("Please add GEMINI_API_KEY and SLACK_WEBHOOK_URL in Streamlit Secrets")
+    SLACK_WEBHOOK = st.secrets["SLACK_WEBHOOK_URL"]
+except:
+    st.error("Add GEMINI_API_KEY and SLACK_WEBHOOK_URL in Streamlit Secrets")
     st.stop()
 
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# ========================= UI STYLE =========================
+# ========================= UI =========================
 st.markdown("""
 <style>
-    .big-title {font-size: 3.2rem !important; font-weight: bold; text-align: center; margin: 0;}
-    .subtitle {text-align: center; color: #94a3b8; font-size: 1.3rem; margin-bottom: 2rem;}
-    .signal-box {text-align: center; padding: 1.5rem; border-radius: 20px; font-size: 2.2rem; font-weight: bold; color: white; margin: 2rem 0;}
-    .metric-card {background: linear-gradient(135deg, #1e293b, #334155); padding: 1.5rem; border-radius: 16px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.4);}
-    .stButton>button {width: 100%; height: 3.5rem; font-size: 1.2rem; font-weight: bold;}
+    .title {font-size: 3.5rem; font-weight: bold; text-align: center; background: linear-gradient(90deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;}
+    .subtitle {text-align: center; color: #94a3b8; font-size: 1.4rem; margin-bottom: 2rem;}
+    .signal {text-align: center; padding: 1.8rem; border-radius: 25px; font-size: 2.5rem; font-weight: bold; color: white; margin: 2rem 0;}
+    .card {background: #1e293b; padding: 1.5rem; border-radius: 16px; text-align: center; box-shadow: 0 8px 25px rgba(0,0,0,0.5);}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="big-title">Infosys InsightSphere</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Real-Time Strategic Intelligence • Executive Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">Infosys InsightSphere</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Real-Time Strategic Intelligence Dashboard</div>', unsafe_allow_html=True)
 
 # ========================= SIDEBAR =========================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/artificial-intelligence.png", width=80)
-    st.title("Controls")
-    ticker = st.text_input("Stock Ticker", "TSLA").upper().strip()
-    company = st.text_input("Company Name", "Tesla").strip()
+    st.markdown("### Controls")
+    ticker = st.text_input("Stock Ticker", value="TSLA", help="e.g. TSLA, AAPL, RELIANCE.NS").upper().strip()
+    company = st.text_input("Company Name (optional)", value="Tesla")
     days = st.slider("Forecast Horizon (Days)", 3, 21, 7)
-    use_prophet = st.checkbox("Use Prophet (Best Accuracy)", value=True)
+    use_prophet = st.checkbox("Use Prophet Model (Recommended)", value=True)
     
-    st.markdown("---")
-    if st.button("Run Full Analysis", type="primary", use_container_width=True):
-        st.success("Analysis Started!")
+    if st.button("Run Analysis", type="primary", use_container_width=True):
+        # Clear cache for fresh data
+        st.cache_data.clear()
+        st.success("Refreshing all data...")
         st.rerun()
 
-# ========================= DATA FETCH =========================
-@st.cache_data(ttl=300, show_spinner="Fetching real-time data...")
-def get_stock_data(tkr):
+# ========================= DATA FETCH (FIXED!) =========================
+@st.cache_data(ttl=600, show_spinner="Fetching stock data...")
+def fetch_stock(tkr):
     try:
-        stock = yf.Ticker(tkr)
-        hist = stock.history(period="1y", auto_adjust=True)
-        if hist.empty:
+        ticker_obj = yf.Ticker(tkr)
+        hist = ticker_obj.history(period="1y", auto_adjust=True)
+        if hist.empty or len(hist) < 50:
             return None
-        info = stock.info
-        return {
-            "hist": hist.reset_index(),
-            "price": info.get("currentPrice") or hist["Close"].iloc[-1],
-            "cap": info.get("marketCap"),
-            "name": info.get("longName", company)
-        }
-    except:
+        info = ticker_obj.info
+        current_price = info.get("currentPrice") or info.get("regularMarketPrice") or hist["Close"].iloc[-1]
+        market_cap = info.get("marketCap")
+        name = info.get("longName") or info.get("shortName") or company
+        return hist.reset_index(), current_price, market_cap, name
+    except Exception as e:
+        st.error(f"yfinance error: {e}")
         return None
 
-@st.cache_data(ttl=600)
-def get_news(comp, tkr):
-    url = f"https://news.google.com/rss/search?q={comp}+{tkr}+stock&hl=en"
-    feed = feedparser.parse(url)
-    return [f"{e.title}. {e.get('summary','')}" for e in feed.entries[:15]]
-
-# ========================= RUN ANALYSIS =========================
-data = get_stock_data(ticker)
-if not data:
-    st.error(f"Invalid ticker: {ticker}")
+# Run fetch
+result = fetch_stock(ticker)
+if result is None:
+    st.error(f"Invalid or blocked ticker: {ticker}")
     st.stop()
 
-df = data["hist"]
-price = data["price"]
-cap = data["cap"]
-name = data["name"] or company
+hist_df, price, market_cap, company_name = result
 
-news = get_news(name, ticker)
+# ========================= NEWS & SENTIMENT =========================
+@st.cache_data(ttl=1800)
+def get_news_and_sentiment(comp, tkr):
+    url = f"https://news.google.com/rss/search?q={comp}+{tkr}+stock&hl=en-US&gl=US&ceid=US:en"
+    feed = feedparser.parse(url)
+    texts = [f"{e.title}. {e.get('summary','')}".strip() for e in feed.entries[:12]]
+    
+    def score(text):
+        try:
+            r = model.generate_content(f"Rate sentiment from -100 (very negative) to +100 (very positive). Return ONLY the number.\n\n{text[:1400]}")
+            import re
+            num = re.search(r'-?\d+', r.text)
+            return int(num.group()) if num else 0
+        except:
+            return 0
+    
+    scores = [score(t) for t in texts]
+    return np.mean(scores) if scores else 0
 
-# ========================= SENTIMENT =========================
-def get_sentiment(text):
-    try:
-        r = model.generate_content(
-            f"Rate this financial sentiment from -100 (very bearish) to +100 (very bullish). Return ONLY the number.\n\nText: {text[:1400]}"
-        )
-        import re
-        num = re.search(r'-?\d+', r.text)
-        return int(num.group()) if num else 0
-    except:
-        return 0
+with st.spinner("Gemini analyzing latest news sentiment..."):
+    avg_sentiment = get_news_and_sentiment(company_name, ticker)
 
-with st.spinner("Gemini is analyzing market sentiment..."):
-    sentiments = [get_sentiment(txt) for txt in news]
-avg_sentiment = round(np.mean(sentiments), 1) if sentiments else 0
+# ========================= FORECASTING =========================
+def forecast(hist, days, prophet=True):
+    df = hist[["Date", "Close"]].copy()
+    df.columns = ["ds", "y"]
+    df["ds"] = pd.to_datetime(df["ds"])
 
-# ========================= FORECAST =========================
-def make_forecast(df, days, use_prophet=True):
-    df2 = df[["Date", "Close"]].copy()
-    df2.columns = ["ds", "y"]
-    df2["ds"] = pd.to_datetime(df2["ds"])
-
-    if use_prophet:
+    if prophet:
         try:
             from prophet import Prophet
-            m = Prophet(daily_seasonality=True, weekly_seasonality=True)
-            m.fit(df2)
+            m = Prophet(daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=False)
+            m.fit(df)
             future = m.make_future_dataframe(periods=days)
             fc = m.predict(future)
             return fc.tail(days), "Prophet"
@@ -122,114 +115,94 @@ def make_forecast(df, days, use_prophet=True):
 
     # Lightweight fallback
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
-    model = ExponentialSmoothing(df2["y"], trend="add")
+    model = ExponentialSmoothing(df["y"], trend="add", damped_trend=True)
     fit = model.fit()
     pred = fit.forecast(days)
-    dates = pd.date_range(df2["ds"].iloc[-1] + timedelta(1), periods=days)
-    res = pd.DataFrame({"ds": dates, "yhat": pred})
-    res["yhat_lower"] = res["yhat"] * 0.93
-    res["yhat_upper"] = res["yhat"] * 1.07
-    return res, "Light Model"
+    dates = pd.date_range(start=df["ds"].iloc[-1] + timedelta(days=1), periods=days)
+    res = pd.DataFrame({"ds": dates, "yhat": pred.values})
+    res["yhat_lower"] = res["yhat"] * 0.92
+    res["yhat_upper"] = res["yhat"] * 1.08
+    return res, "Exponential Smoothing"
 
-fc_df, model_used = make_forecast(df, days, use_prophet)
-proj_price = round(fc_df["yhat"].mean(), 2)
-change_pct = round((proj_price - price) / price * 100, 2)
+fc_df, model_used = forecast(hist_df, days, use_prophet)
+forecast_price = round(fc_df["yhat"].mean(), 2)
+pct_change = round((forecast_price - price) / price * 100, 2)
 
 # ========================= SIGNAL =========================
-if change_pct >= 3 and avg_sentiment >= 20:
+if pct_change >= 3 and avg_sentiment >= 20:
     signal, color = "STRONG BUY", "#00ff88"
-elif change_pct >= 1.5 and avg_sentiment >= 5:
+elif pct_change >= 1.5 and avg_sentiment >= 5:
     signal, color = "BUY", "#00cc66"
-elif change_pct <= -3 and avg_sentiment <= -20:
+elif pct_change <= -3 and avg_sentiment <= -20:
     signal, color = "STRONG SELL", "#ff0033"
-elif change_pct <= -1.5 and avg_sentiment <= -5:
+elif pct_change <= -1.5 and avg_sentiment <= -5:
     signal, color = "SELL", "#ff4444"
 else:
     signal, color = "HOLD", "#ffaa00"
 
 # ========================= DASHBOARD =========================
-c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1.5])
+c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 2])
 with c1:
-    st.markdown(f"<div class='metric-card'><h3>{name}</h3><h1>${price:.2f}</h1><small>Current Price</small></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='card'><h3>{company_name}</h3><h1>${price:.2f}</h1></div>", unsafe_allow_html=True)
 with c2:
-    cap_str = f"${cap/1e12:.2f}T" if cap and cap >= 1e12 else f"${cap/1e9:.2f}B" if cap else "N/A"
-    st.markdown(f"<div class='metric-card'><h4>Market Cap</h4><h2>{cap_str}</h2></div>", unsafe_allow_html=True)
+    cap_str = f"${market_cap/1e12:.2f}T" if market_cap and market_cap >= 1e12 else f"${market_cap/1e9:.2f}B" if market_cap else "N/A"
+    st.markdown(f"<div class='card'><h4>Market Cap</h4><h2>{cap_str}</h2></div>", unsafe_allow_html=True)
 with c3:
-    st.markdown(f"<div class='metric-card'><h4>Sentiment</h4><h2>{avg_sentiment:+.0f}</h2><small>/100</small></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='card'><h4>Sentiment</h4><h2>{avg_sentiment:+.0f}</h2></div>", unsafe_allow_html=True)
 with c4:
-    st.markdown(f"<div class='signal-box' style='background:{color}'>{signal}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='signal' style='background:{color}'>SIGNAL: {signal}</div>", unsafe_allow_html=True)
 
-# Full Dashboard Chart
-fig = make_subplots(
-    rows=2, cols=2,
-    subplot_titles=("Price Trend & Forecast", "Market Sentiment", f"{days}-Day Price Forecast", "Executive Summary"),
-    specs=[[{"type": "scatter"}, {"type": "indicator"}],
-           [{"type": "bar"}, {"type": "table"}]],
-    vertical_spacing=0.12
+# Plotly Dashboard
+fig = make_subplots(rows=2, cols=2,
+    subplot_titles=("Price & Forecast", "Sentiment Gauge", f"{days}-Day Forecast", "Executive Summary"),
+    specs=[[{"type": "scatter"}, {"type": "indicator"}], [{"type": "bar"}, {"type": "table"}]]
 )
 
-# Price Chart
-fig.add_trace(go.Scatter(x=df["Date"], y=df["Close"], name="Historical Price", line=dict(width=3, color="#60a5fa")), row=1, col=1)
-fig.add_trace(go.Scatter(x=fc_df["ds"], y=fc_df["yhat"], name="Forecast", line=dict(width=4, color="#3b82f6", dash="dot")), row=1, col=1)
+fig.add_trace(go.Scatter(x=hist_df["Date"], y=hist_df["Close"], name="Historical", line=dict(color="#60a5fa", width=3)), row=1, col=1)
+fig.add_trace(go.Scatter(x=fc_df["ds"], y=fc_df["yhat"], name="Forecast", line=dict(color="#8b5cf6", width=4, dash="dot")), row=1, col=1)
 fig.add_trace(go.Scatter(
     x=pd.concat([fc_df["ds"], fc_df["ds"][::-1]]),
     y=pd.concat([fc_df["yhat_upper"], fc_df["yhat_lower"][::-1]]),
-    fill="toself", fillcolor="rgba(59,130,246,0.25)", line=dict(color="rgba(0,0,0,0)"), showlegend=False
+    fill="toself", fillcolor="rgba(139,92,246,0.2)", line=dict(color="transparent"), showlegend=False
 ), row=1, col=1)
 
-# Sentiment Gauge
 fig.add_trace(go.Indicator(
-    mode = "gauge+number",
-    value = avg_sentiment,
-    domain = {'x': [0, 1], 'y': [0, 1]},
-    title = {'text': "Sentiment Score"},
-    gauge = {
-        'axis': {'range': [-100, 100]},
-        'bar': {'color': "cyan"},
-        'steps': [
-            {'range': [-100, -25], 'color': "red"},
-            {'range': [-25, 25], 'color': "gray"},
-            {'range': [25, 100], 'color': "green"}],
-        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': 0}}
+    mode="gauge+number", value=avg_sentiment,
+    gauge={'axis': {'range': [-100,100]}, 'bar': {'color': "purple"}, 'steps': [
+        {'range': [-100,-25], 'color': "red"},
+        {'range': [-25,25], 'color': "gray"},
+        {'range': [25,100], 'color': "green"}]},
+    title={'text': "Sentiment Score"}
 ), row=1, col=2)
 
-# Forecast Bars
-fig.add_trace(go.Bar(x=fc_df["ds"].dt.strftime("%b %d"), y=fc_df["yhat"], marker_color="#3b82f6", name="Forecast"), row=2, col=1)
+fig.add_trace(go.Bar(x=fc_df["ds"].dt.strftime("%b %d"), y=fc_df["yhat"], marker_color="#8b5cf6"), row=2, col=1)
 
-# Summary Table
 fig.add_trace(go.Table(
-    header=dict(values=["Metric", "Value"], fill_color="#1e293b", font=dict(color="white", size=14)),
+    header=dict(values=["Metric", "Value"], fill_color="#1e293b", font=dict(color="white")),
     cells=dict(values=[
-        ["Company", "Ticker", "Price Now", f"{days}D Forecast", "Change %", "Sentiment", "Signal", "Model Used"],
-        [name, ticker, f"${price:.2f}", f"${proj_price:.2f}", f"{change_pct:+.2f}%", f"{avg_sentiment:+.1f}", signal, model_used]
-    ], fill_color="#334155", font=dict(color="white"))
+        ["Company", "Ticker", "Current Price", f"{days}D Forecast", "Change %", "Sentiment", "Signal", "Model"],
+        [company_name, ticker, f"${price:.2f}", f"${forecast_price:.2f}", f"{pct_change:+.2f}%", f"{avg_sentiment:+.1f}", signal, model_used]
+    ])
 ), row=2, col=2)
 
-fig.update_layout(height=950, showlegend=False, template="plotly_dark", margin=dict(t=80))
+fig.update_layout(height=1000, showlegend=False, template="plotly_dark", title_text="Strategic Intelligence Dashboard")
 st.plotly_chart(fig, use_container_width=True)
 
 # ========================= SLACK ALERT =========================
-if st.button("Send Alert to Slack Channel", type="primary", use_container_width=True):
-    alert = f"""
+if st.button("Send Alert to Slack", type="primary", use_container_width=True):
+    msg = f"""
 *InsightSphere Alert*  
-*{name} ({ticker})*  
+*{company_name} ({ticker})*  
 *Signal:* {signal}  
-*Price:* ${price:.2f} to ${proj_price:.2f} ({change_pct:+.2f}%)  
+*Price:* ${price:.2f} to ${forecast_price:.2f} ({pct_change:+.2f}%)  
 *Sentiment:* {avg_sentiment:+.1f}/100  
-*Model:* {model_used}  
-*Time:* {datetime.now().strftime('%b %d, %Y %H:%M')}
+*Model:* {model_used}
     """.strip()
     try:
-        requests.post(SLACK_URL, json={"text": alert})
+        requests.post(SLACK_WEBHOOK, json={"text": msg})
         st.success("Alert sent to Slack!")
     except:
-        st.error("Failed to send Slack alert")
+        st.error("Slack failed")
 
-# ========================= FOOTER =========================
 st.markdown("---")
-st.markdown(
-    "<p style='text-align:center; color:#64748b; font-size:1rem;'>"
-    "© 2025 Infosys Springboard Internship • Team: Gopichand, Anshika, Janmejay, Vaishnavi"
-    "</p>",
-    unsafe_allow_html=True
-)
+st.caption("© 2025 Infosys Springboard Internship • Team: Gopichand, Anshika, Janmejay, Vaishnavi")
