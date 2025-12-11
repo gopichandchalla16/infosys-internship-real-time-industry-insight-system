@@ -355,5 +355,5 @@ if SLACK_WEBHOOK and st.button("Send Alert to Slack"):
     except Exception as e:
         st.error(f"Failed to send Slack alert: {e}")
 
-st.caption("© 2025 Infosys Springboard Internship — Real-Time Strategic Intelligence Dashboard"")
+st.caption("© 2025 Infosys Springboard Internship — Real-Time Strategic Intelligence Dashboard")
 st.markdown("</div>", unsafe_allow_html=True)
