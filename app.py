@@ -1,98 +1,104 @@
 import os
-import time
-import threading
 import re
 from datetime import datetime, timedelta
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Optional
 
 import streamlit as st
-import yfinance as yf
-import feedparser
 import pandas as pd
 import numpy as np
 import requests
+import yfinance as yf
+import feedparser
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Optional: Gemini (Google) LLM — if you don't have it, sentiment falls back to local heuristic
-GEMINI_ENABLED = False
+# Optional Gemini import handled safely
 try:
     import google.generativeai as genai  # type: ignore
-    GEMINI_ENABLED = True
 except Exception:
-    GEMINI_ENABLED = False
+    genai = None
 
-# ---------------------------
-# Page & runtime
-# ---------------------------
-st.set_page_config(page_title="InsightSphere (Extended)", layout="wide")
-st.title("Infosys InsightSphere — Extended")
+# -------------------- Page config --------------------
+st.set_page_config(page_title="InsightSphere", layout="wide", initial_sidebar_state="expanded")
 
-# ---------------------------
-# Secrets (do NOT commit)
-# ---------------------------
-GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "")) if "secrets" in dir(st) else os.getenv("GEMINI_API_KEY", "")
-SLACK_WEBHOOK = st.secrets.get("SLACK_WEBHOOK_URL", os.getenv("SLACK_WEBHOOK_URL", "")) if "secrets" in dir(st) else os.getenv("SLACK_WEBHOOK_URL", "")
-WEBSOCKET_URL = st.secrets.get("WEBSOCKET_URL", os.getenv("WEBSOCKET_URL", "")) if "secrets" in dir(st) else os.getenv("WEBSOCKET_URL", "")
+# -------------------- CSS / Premium UI (Apple-style glass) --------------------
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    html, body, [class*="css"]  { font-family: 'Inter', sans-serif; }
+    .glass {
+        background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border-radius: 16px;
+        padding: 18px;
+        border: 1px solid rgba(255,255,255,0.06);
+        box-shadow: 0 8px 30px rgba(2,6,23,0.5);
+    }
+    .metric {
+        background: rgba(255,255,255,0.03);
+        border-radius: 12px;
+        padding: 12px;
+        text-align: center;
+    }
+    .title {
+        font-size: 2.6rem;
+        font-weight: 700;
+        margin-bottom: 2px;
+        letter-spacing: -0.02em;
+    }
+    .subtitle {
+        color: rgba(255,255,255,0.72);
+        margin-bottom: 12px;
+    }
+    /* Light theme overrides */
+    .light .glass { background: linear-gradient(135deg, rgba(255,255,255,0.85), rgba(255,255,255,0.95)); border: 1px solid rgba(15,23,42,0.04); box-shadow: 0 6px 18px rgba(2,6,23,0.06); }
+    .light .metric { background: rgba(0,0,0,0.03); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-if GEMINI_KEY and GEMINI_ENABLED:
+# -------------------- Secrets (do not commit) --------------------
+# Use Streamlit > Settings > Secrets for keys, or set environment variables
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else os.getenv("GEMINI_API_KEY", "")
+SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", "") if hasattr(st, "secrets") else os.getenv("SLACK_WEBHOOK_URL", "")
+
+# Configure Gemini if available
+if genai is not None and GEMINI_API_KEY:
     try:
-        genai.configure(api_key=GEMINI_KEY)
+        genai.configure(api_key=GEMINI_API_KEY)
         gen_model = genai.GenerativeModel("gemini-1.5-flash")
     except Exception:
         gen_model = None
 else:
     gen_model = None
 
-# ---------------------------
-# UI - Sidebar Controls
-# ---------------------------
-st.sidebar.header("Controls")
-# Theme toggle
-theme_choice = st.sidebar.radio("Theme", ["Dark", "Light"], index=0)
+# -------------------- Sidebar controls --------------------
+with st.sidebar:
+    st.header("Controls")
+    ticker = st.text_input("Stock Ticker", value="AAPL", help="Examples: AAPL, TSLA, MSFT, RELIANCE.NS").upper().strip()
+    company_override = st.text_input("Company name (optional)", value="").strip()
+    forecast_days = st.slider("Forecast horizon (days)", min_value=3, max_value=21, value=7)
+    theme = st.selectbox("Theme", ["Dark (default)", "Light"])
+    st.markdown("---")
+    st.markdown("Integrations (optional)")
+    st.write(f"- Gemini: {'Enabled' if gen_model is not None else 'Not configured'}")
+    st.write(f"- Slack: {'Configured' if SLACK_WEBHOOK_URL else 'Not configured'}")
+    if st.button("Run analysis", use_container_width=True):
+        st.cache_data.clear()
+        st.experimental_rerun()
 
-# Stocks input: primary ticker, plus multi and competitors
-ticker = st.sidebar.text_input("Primary Ticker", value="AAPL").upper().strip()
-company_name = st.sidebar.text_input("Company name (optional)", value="")
-multi_tickers = st.sidebar.text_input("Multi Tick ers (comma-separated)", value="AAPL, MSFT").upper()
-competitors = st.sidebar.text_input("Competitors (comma-separated)", value="GOOGL, AMZN").upper()
-
-# Forecast days
-days = st.sidebar.slider("Forecast horizon (days)", 3, 21, 7)
-
-# Live updates controls
-enable_live = st.sidebar.checkbox("Enable live updates (polling or websocket)", value=True)
-poll_interval = st.sidebar.slider("Polling interval (seconds)", 5, 60, 15)
-
-# Action
-if st.sidebar.button("Run / Refresh", use_container_width=True):
-    st.cache_data.clear()
-    st.experimental_rerun()
-
-# Apply theme CSS (simple)
-if theme_choice == "Dark":
-    plotly_template = "plotly_dark"
-    st.markdown(
-        """<style>
-        .stApp { background-color: #0f172a; color: #e6eef8; }
-        .card { background: #0b1220; padding: 12px; border-radius: 12px; }
-        </style>""", unsafe_allow_html=True
-    )
+# Toggle light CSS class if Light chosen
+if theme.startswith("Light"):
+    st.markdown("<div class='light'>", unsafe_allow_html=True)
 else:
-    plotly_template = "plotly_white"
-    st.markdown(
-        """<style>
-        .stApp { background-color: #ffffff; color: #111827; }
-        .card { background: #f8fafc; padding: 12px; border-radius: 12px; }
-        </style>""", unsafe_allow_html=True
-    )
+    st.markdown("<div>", unsafe_allow_html=True)
 
-# ---------------------------
-# Utilities
-# ---------------------------
-INVALID_COMPANY_KEYWORDS = {"abc","xyz","test","demo","sample","fake","dummy","123"}
-POS_WORDS = ["growth","strong","bullish","positive","optimistic","profit","surge","beats","outperform","record"]
-NEG_WORDS = ["weak","bearish","loss","regulatory","lawsuit","slowing","concern","fraud","volatility","drop"]
+# -------------------- Utility functions --------------------
+INVALID_COMPANY_KEYWORDS = {"abc", "xyz", "test", "testing", "demo", "sample", "fake", "dummy", "123", "qwerty", "asdf"}
 
 def is_invalid_company_name(name: str) -> bool:
     if not name or not isinstance(name, str):
@@ -105,116 +111,110 @@ def is_invalid_company_name(name: str) -> bool:
             return True
     return False
 
-@st.cache_data(ttl=600)
-def search_ticker_by_company(company_name: str) -> Optional[str]:
-    # lightweight resolution via Yahoo search
-    try:
-        q = company_name.strip().replace(" ", "+")
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}"
-        headers = {"User-Agent":"Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=6)
-        r.raise_for_status()
-        data = r.json()
-        for itm in data.get("quotes", []):
-            if itm.get("quoteType") == "EQUITY":
-                return itm.get("symbol")
-    except Exception:
-        return None
-    return None
-
-# ---------------------------
-# Robust yfinance fetch (session + fallback)
-# ---------------------------
-@st.cache_data(ttl=600)
-def fetch_stock_data(tk: str, period: str = "1y", interval: str = "1d") -> Tuple[Optional[pd.DataFrame], Optional[float], Optional[float], Optional[str], Optional[str]]:
+# Robust yfinance fetch that uses a requests session and falls back gracefully
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_historical(ticker: str, period: str = "1y"):
     session = requests.Session()
-    session.headers.update({"User-Agent":"Mozilla/5.0"})
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
     try:
-        df = yf.download(tk, period=period, interval=interval, auto_adjust=True, progress=False, session=session)
-        if df is None or df.empty or len(df) < 2:
+        # Primary method
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True, session=session)
+        if df is None or df.empty:
             raise ValueError("No data")
         df = df.reset_index()
-        # normalize columns
+        # normalize date column
         if "Date" in df.columns and "date" not in df.columns:
-            df = df.rename(columns={"Date":"date"})
-        # try to extract info
-        t = yf.Ticker(tk, session=session)
+            df = df.rename(columns={"Date": "date"})
+        # Extract market info
+        t = yf.Ticker(ticker, session=session)
         try:
             info = t.fast_info or {}
         except Exception:
             info = {}
-        price = info.get("last_price") or float(df["Close"].iloc[-1])
-        market_cap = info.get("market_cap")
-        longname = info.get("long_name") or info.get("short_name") or tk
-        sector = None
-        try:
-            info2 = t.info or {}
-            sector = info2.get("sector")
-        except Exception:
-            sector = None
-        return df, price, market_cap, longname, sector
+        price = info.get("last_price", float(df["Close"].iloc[-1]))
+        market_cap = info.get("market_cap", None)
+        name = info.get("long_name") or info.get("short_name") or ticker
+        return df, price, market_cap, name
     except Exception:
-        # fallback non-session
+        # fallback without session
         try:
-            t = yf.Ticker(tk)
-            hist = t.history(period=period, interval=interval, auto_adjust=True)
+            t = yf.Ticker(ticker)
+            hist = t.history(period=period, auto_adjust=True)
             if hist is None or hist.empty:
-                return None, None, None, None, None
-            hist = hist.reset_index().rename(columns={"Date":"date"}) if "Date" in hist.reset_index().columns else hist.reset_index()
+                return None, None, None, None
+            hist = hist.reset_index()
+            if "Date" in hist.columns and "date" not in hist.columns:
+                hist = hist.rename(columns={"Date": "date"})
             info = {}
             try:
                 info = t.fast_info or {}
             except Exception:
                 info = {}
-            price = info.get("last_price") or float(hist["Close"].iloc[-1])
-            market_cap = info.get("market_cap")
-            longname = info.get("long_name") or tk
-            sector = None
-            try:
-                info2 = t.info or {}
-                sector = info2.get("sector")
-            except Exception:
-                sector = None
-            return hist, price, market_cap, longname, sector
+            price = info.get("last_price", float(hist["Close"].iloc[-1]))
+            market_cap = info.get("market_cap", None)
+            name = info.get("long_name") or ticker
+            return hist, price, market_cap, name
         except Exception:
-            return None, None, None, None, None
+            return None, None, None, None
 
-# ---------------------------
-# Sentiment (Gemini or local heuristic)
-# ---------------------------
+# -------------------- Fetch & validate --------------------
+if not ticker:
+    st.error("Please provide a ticker symbol.")
+    st.stop()
+
+hist_df, current_price, market_cap, detected_name = fetch_historical(ticker, period="1y")
+if hist_df is None:
+    st.error(f"Could not fetch historical data for ticker '{ticker}'. Try a different ticker (AAPL, TSLA, MSFT, RELIANCE.NS, GOOGL).")
+    st.stop()
+
+company_name = company_override if company_override else (detected_name or ticker)
+
+# -------------------- Sentiment: Gemini (optional) + local fallback --------------------
+POS_WORDS = ["growth", "strong", "bullish", "positive", "optimistic", "profit", "surge", "beats", "outperform", "record"]
+NEG_WORDS = ["weak", "bearish", "loss", "regulatory", "lawsuit", "slowing", "concern", "fraud", "volatility", "drop"]
+
 def local_sentiment(text: str) -> float:
-    if not text: return 0.0
+    if not text:
+        return 0.0
     t = text.lower()
     score = 0
     for w in POS_WORDS:
-        if w in t: score += 10
+        if w in t:
+            score += 10
     for w in NEG_WORDS:
-        if w in t: score -= 10
+        if w in t:
+            score -= 10
     return float(max(-100, min(100, score)))
 
-@st.cache_data(ttl=1800)
-def analyze_sentiment(company: str, tk: str, use_gemini: bool = True) -> float:
-    # gather some headlines
-    q = f"{company} {tk} stock" if company else f"{tk} stock"
-    url = f"https://news.google.com/rss/search?q={q}"
-    feed = feedparser.parse(url)
+@st.cache_data(ttl=900, show_spinner=False)
+def compute_sentiment(company: str, ticker: str) -> float:
+    # build safe Google News RSS query; ensure no control characters
+    q = f"{company} {ticker} stock".strip()
+    q_safe = re.sub(r'[^A-Za-z0-9 \-_.]', '', q)
+    url = f"https://news.google.com/rss/search?q={q_safe.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
+
+    try:
+        feed = feedparser.parse(url)
+    except Exception:
+        return 0.0
+
     texts = []
-    for e in feed.entries[:8]:
-        title = getattr(e, "title", "")
-        summary = getattr(e, "summary", "")
+    for entry in feed.entries[:8]:
+        title = getattr(entry, "title", "") or ""
+        summary = getattr(entry, "summary", "") or ""
         texts.append(f"{title}. {summary}")
+
     if not texts:
         return 0.0
 
     scores = []
     for txt in texts:
-        if use_gemini and gen_model is not None:
+        if gen_model is not None:
             try:
-                # trimmed prompt
-                prompt = f"Provide a single integer from -100 (very negative) to 100 (very positive) that represents sentiment for the text.\n\nText: {txt[:1600]}"
+                prompt = f"Rate the sentiment of the following news text from -100 (very negative) to 100 (very positive). Return a single integer.\n\nText:\n{txt[:1600]}"
                 resp = gen_model.generate_content(prompt)
-                raw = getattr(resp, "text", str(resp))
-                m = re.search(r"-?\d+", str(raw))
+                raw = getattr(resp, "text", "") or str(resp)
+                m = re.search(r"-?\d+", raw)
                 if m:
                     scores.append(int(m.group()))
                     continue
@@ -223,281 +223,122 @@ def analyze_sentiment(company: str, tk: str, use_gemini: bool = True) -> float:
         # fallback
         scores.append(int(local_sentiment(txt)))
     avg = float(np.mean(scores)) if scores else 0.0
-    return float(round(max(-100, min(100, avg)), 1))
+    return float(max(-100.0, min(100.0, avg)))
 
-# ---------------------------
-# Forecast (Holt-Winters simple)
-# ---------------------------
-def forecast_holtwinters(df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
-    from statsmodels.tsa.holtwinters import ExponentialSmoothing
-    df2 = df.copy()
-    # locate close column and date
-    if "date" not in df2.columns:
-        if "Date" in df2.columns:
-            df2 = df2.rename(columns={"Date":"date"})
-    df2["date"] = pd.to_datetime(df2["date"])
-    series = df2["Close"].astype(float)
+with st.spinner("Analyzing news sentiment..."):
+    agg_sentiment = compute_sentiment(company_name, ticker)
+
+# -------------------- Forecasting (Holt-Winters) --------------------
+def arima_like_forecast(df: pd.DataFrame, periods: int = 7):
+    # We use Exponential Smoothing (Holt-Winters) — fast and stable for short horizons
+    s = df.copy()
+    if "date" not in s.columns and "Date" in s.columns:
+        s = s.rename(columns={"Date": "date"})
+    s["date"] = pd.to_datetime(s["date"])
+    series = s["Close"].astype(float)
+    # small safety: if too small, return None
+    if len(series) < 10:
+        return None
     model = ExponentialSmoothing(series, trend="add", initialization_method="estimated")
     fit = model.fit(optimized=True)
-    pred = fit.forecast(days)
-    dates = pd.date_range(df2["date"].iloc[-1] + timedelta(1), periods=days, freq="D")
-    out = pd.DataFrame({"ds": dates, "yhat": pred})
-    out["yhat_lower"] = out["yhat"] * 0.94
-    out["yhat_upper"] = out["yhat"] * 1.06
+    pred = fit.forecast(periods)
+    dates = pd.date_range(start=s["date"].iloc[-1] + timedelta(days=1), periods=periods, freq="D")
+    out = pd.DataFrame({"date": dates, "yhat": pred})
+    out["yhat_lower"] = out["yhat"] * 0.92
+    out["yhat_upper"] = out["yhat"] * 1.08
     return out
 
-# ---------------------------
-# Live updates (websocket or polling)
-# ---------------------------
-def start_polling(tickers: List[str], interval_seconds: int = 15):
-    """
-    Poll yfinance for the latest price every `interval_seconds` seconds.
-    Stores results in st.session_state['live_prices'].
-    """
-    def _poll():
-        while True:
-            try:
-                for tk in tickers:
-                    df, price, cap, name, sector = fetch_stock_data(tk, period="5d", interval="1m")
-                    if price is not None:
-                        st.session_state["live_prices"][tk] = {"price": price, "ts": datetime.utcnow().isoformat()}
-            except Exception:
-                pass
-            time.sleep(interval_seconds)
-    if "live_thread" not in st.session_state:
-        st.session_state["live_prices"] = {tk: {"price": None, "ts": None} for tk in tickers}
-        th = threading.Thread(target=_poll, daemon=True)
-        st.session_state["live_thread"] = th
-        th.start()
+forecast_df = arima_like_forecast(hist_df, forecast_days)
+if forecast_df is None:
+    st.error("Not enough historical data to produce a forecast.")
+    st.stop()
 
-# Websocket support (optional) - uses websocket-client library (added to requirements)
-def start_websocket_listener(ws_url: str, tickers: List[str]):
-    """
-    If you have a websocket URL that pushes JSON with { 'symbol': 'AAPL', 'price': 123.4 },
-    this thread will consume it and update st.session_state['live_prices'].
-    """
+proj_price = float(forecast_df["yhat"].mean())
+proj_pct = ((proj_price - float(current_price)) / float(current_price)) * 100.0 if current_price else 0.0
+
+# -------------------- Signal engine --------------------
+def compute_signal(pct: float, sentiment_score: float):
+    if pct > 3 and sentiment_score > 20:
+        return {"signal": "STRONG BUY", "color": "#059669", "reason": f"Projected upside {pct:.2f}% and positive sentiment {sentiment_score:.1f}"}
+    if pct > 1 and sentiment_score > 10:
+        return {"signal": "BUY", "color": "#059669", "reason": f"Moderate upside {pct:.2f}% and supportive sentiment {sentiment_score:.1f}"}
+    if pct < -3 and sentiment_score < -20:
+        return {"signal": "STRONG SELL", "color": "#DC2626", "reason": f"Projected downside {pct:.2f}% and negative sentiment {sentiment_score:.1f}"}
+    if pct < -1 and sentiment_score < -10:
+        return {"signal": "SELL", "color": "#DC2626", "reason": f"Moderate downside {pct:.2f}% and negative sentiment {sentiment_score:.1f}"}
+    return {"signal": "HOLD", "color": "#D97706", "reason": f"Mixed signals ({pct:.2f}%) and sentiment {sentiment_score:.1f}"}
+
+signal_info = compute_signal(proj_pct, agg_sentiment)
+
+# -------------------- UI: Header & KPIs --------------------
+st.markdown(f"<div class='glass'><div class='title'>{company_name} — InsightSphere</div><div class='subtitle'>Real-Time Strategic Intelligence — Executive Dashboard</div></div>", unsafe_allow_html=True)
+st.markdown("")
+
+k1, k2, k3, k4 = st.columns(4)
+k1.markdown(f"<div class='metric'><div style='font-size:14px'>Current Price</div><div style='font-size:20px;font-weight:700'>${float(current_price):,.2f}</div></div>", unsafe_allow_html=True)
+k2.markdown(f"<div class='metric'><div style='font-size:14px'>7-Day Forecast (avg)</div><div style='font-size:20px;font-weight:700'>${proj_price:,.2f}</div></div>", unsafe_allow_html=True)
+k3.markdown(f"<div class='metric'><div style='font-size:14px'>Projected Move</div><div style='font-size:20px;font-weight:700'>{proj_pct:+.2f}%</div></div>", unsafe_allow_html=True)
+k4.markdown(f"<div class='metric'><div style='font-size:14px'>Signal</div><div style='font-size:18px;font-weight:700;color:{signal_info['color']}'>{signal_info['signal']}</div></div>", unsafe_allow_html=True)
+
+st.markdown(f"**Rationale:** {signal_info['reason']}  \n**Aggregate sentiment (news):** {agg_sentiment:+.1f}")
+
+# -------------------- Plotly composite chart --------------------
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35], vertical_spacing=0.08, subplot_titles=("Historical vs Forecast", "7-day Forecast"))
+fig.add_trace(go.Scatter(x=hist_df["date"], y=hist_df["Close"], mode="lines", name="Historical"), row=1, col=1)
+fig.add_trace(go.Scatter(x=forecast_df["date"], y=forecast_df["yhat"], mode="lines+markers", name="Forecast", line=dict(dash="dash")), row=1, col=1)
+fig.add_trace(go.Scatter(x=list(forecast_df["date"]) + list(forecast_df["date"][::-1]), y=list(forecast_df["yhat_upper"]) + list(forecast_df["yhat_lower"][::-1]), fill="toself", fillcolor="rgba(0,102,204,0.12)", line=dict(color="rgba(0,0,0,0)"), showlegend=False), row=1, col=1)
+fig.add_trace(go.Bar(x=forecast_df["date"].dt.strftime("%Y-%m-%d"), y=forecast_df["yhat"], name="Forecast Price"), row=2, col=1)
+fig.update_layout(height=780, template=("plotly_dark" if theme.startswith("Dark") else "plotly_white"))
+st.plotly_chart(fig, use_container_width=True)
+
+# -------------------- Gemini Insight Generator --------------------
+def generate_gemini_insights(company: str, ticker: str, price: float, forecast_price: float, pct_change: float, sentiment: float) -> str:
+    if gen_model is None:
+        return "Gemini model not configured. Add GEMINI_API_KEY to Streamlit Secrets to enable AI insights."
+    prompt = (
+        "You are a senior strategic intelligence analyst for enterprise leadership.\n"
+        "Produce a concise, executive-grade analysis in the following sections:\n"
+        "1) Executive summary (2 sentences)\n"
+        "2) Top 3 market drivers (bullet list)\n"
+        "3) Top 3 risks/threats (bullet list)\n"
+        "4) Top 3 strategic opportunities (bullet list)\n"
+        "5) Recommended actions for C-suite (1 short paragraph)\n\n"
+        f"Company: {company}\nTicker: {ticker}\nCurrent Price: {price}\n7-day avg forecast: {forecast_price}\nProjected % change: {pct_change:+.2f}%\nAggregate sentiment: {sentiment:+.1f}\n\n"
+        "Be direct, concise, and use enterprise language. Use short bullets and numbered items where appropriate."
+    )
     try:
-        import websocket  # websocket-client
-    except Exception:
-        return
-
-    def _run():
-        def on_message(ws, message):
-            try:
-                data = None
-                try:
-                    data = json.loads(message)
-                except Exception:
-                    # try parse simple "SYMBOL:PRICE"
-                    parts = str(message).split(":")
-                    if len(parts) >= 2:
-                        sym = parts[0].strip().upper()
-                        val = float(parts[1])
-                        data = {"symbol": sym, "price": val}
-                if data:
-                    sym = data.get("symbol") or data.get("s")
-                    pr = data.get("price") or data.get("p")
-                    if sym and pr:
-                        if sym in st.session_state["live_prices"]:
-                            st.session_state["live_prices"][sym] = {"price": float(pr), "ts": datetime.utcnow().isoformat()}
-            except Exception:
-                pass
-
-        def on_error(ws, err):
-            pass
-
-        def on_close(ws, code, reason):
-            pass
-
-        def on_open(ws):
-            # optionally subscribe
-            pass
-
-        ws = websocket.WebSocketApp(ws_url, on_message=on_message, on_error=on_error, on_close=on_close, on_open=on_open)
-        ws.run_forever()
-
-    if "ws_thread" not in st.session_state and ws_url:
-        st.session_state["live_prices"] = {tk: {"price": None, "ts": None} for tk in tickers}
-        th = threading.Thread(target=_run, daemon=True)
-        st.session_state["ws_thread"] = th
-        th.start()
-
-# ---------------------------
-# Gather tickers list
-# ---------------------------
-primary = ticker
-multi_list = [t.strip().upper() for t in multi_tickers.split(",") if t.strip()]
-unique_tickers = list(dict.fromkeys([primary] + multi_list))
-competitor_list = [t.strip().upper() for t in competitors.split(",") if t.strip()]
-
-all_tickers = list(dict.fromkeys(unique_tickers + competitor_list))
-
-# Start live updates (websocket preferred)
-if enable_live:
-    if WEBSOCKET_URL:
-        start_websocket_listener(WEBSOCKET_URL, all_tickers)
-    else:
-        start_polling(all_tickers, poll_interval)
-
-# ---------------------------
-# Fetch data for all tickers (historical + meta)
-# ---------------------------
-stock_data: Dict[str, Dict[str, Any]] = {}
-for tk in unique_tickers:
-    df, price, cap, longname, sector = fetch_stock_data(tk, period="1y", interval="1d")
-    if df is None:
-        st.warning(f"No historical data for {tk}. Skipping.")
-        continue
-    stock_data[tk] = {"df": df, "price": price, "market_cap": cap, "name": longname, "sector": sector}
-    # compute forecast
-    try:
-        fc = forecast_holtwinters(df, days)
-        stock_data[tk]["forecast"] = fc
-        stock_data[tk]["forecast_price"] = float(round(fc["yhat"].mean(), 4))
-        stock_data[tk]["pct_change"] = float(round((stock_data[tk]["forecast_price"] - (price or fc["yhat"].iloc[0])) / (price or fc["yhat"].iloc[0]) * 100.0, 2))
-    except Exception:
-        stock_data[tk]["forecast"] = None
-        stock_data[tk]["forecast_price"] = None
-        stock_data[tk]["pct_change"] = None
-
-# Competitors meta fetch (only current price)
-competitor_meta = {}
-for tk in competitor_list:
-    df, price, cap, longname, sector = fetch_stock_data(tk, period="5d", interval="1d")
-    competitor_meta[tk] = {"price": price, "market_cap": cap, "name": longname, "sector": sector}
-
-# ---------------------------
-# Sentiment for primary
-# ---------------------------
-if unique_tickers:
-    primary_name = stock_data.get(primary, {}).get("name", company_name or primary)
-    sentiment_score = analyze_sentiment(primary_name, primary, use_gemini=(gen_model is not None))
-else:
-    sentiment_score = 0.0
-
-# ---------------------------
-# UI Layout — Multi-stock KPIs & comparison
-# ---------------------------
-st.subheader("Overview & Multi-Stock KPIs")
-k_cols = st.columns(max(1, len(unique_tickers)))
-for i, tk in enumerate(unique_tickers):
-    col = k_cols[i % len(k_cols)]
-    info = stock_data.get(tk)
-    if not info:
-        col.write(f"**{tk}** - no data")
-        continue
-    price = info["price"] or 0.0
-    fc_price = info.get("forecast_price")
-    pct = info.get("pct_change")
-    name = info.get("name", tk)
-    col.markdown(f"<div class='card'><strong>{name} ({tk})</strong><br><div style='font-size:22px'>${price:.2f}</div><div style='font-size:12px'>7d forecast: ${fc_price if fc_price else 'N/A'}</div><div style='font-size:12px'>proj: {pct if pct is not None else 'N/A'}%</div></div>", unsafe_allow_html=True)
-
-# Competitor comparison table
-if competitor_meta:
-    st.subheader("Competitor Comparison")
-    comp_rows = []
-    for tk, meta in competitor_meta.items():
-        comp_rows.append({"Ticker": tk, "Name": meta.get("name") or tk, "Price": meta.get("price") or "N/A", "Market Cap": meta.get("market_cap") or "N/A", "Sector": meta.get("sector") or "N/A"})
-    comp_df = pd.DataFrame(comp_rows)
-    st.dataframe(comp_df)
-
-# ---------------------------
-# Industry-wide heatmap (percent moves)
-# ---------------------------
-st.subheader("Industry Heatmap (Percent Changes)")
-heat_tickers = all_tickers
-heat_rows = []
-heat_sectors = []
-for tk in heat_tickers:
-    df_meta = None
-    try:
-        df_meta = fetch_stock_data(tk, period="7d", interval="1d")
-    except Exception:
-        df_meta = None
-    if df_meta and df_meta[0] is not None:
-        hist = df_meta[0]
-        pct = (float(hist["Close"].iloc[-1]) - float(hist["Close"].iloc[0])) / float(hist["Close"].iloc[0]) * 100.0 if len(hist) > 1 else 0.0
-        heat_rows.append(pct)
-        heat_sectors.append(df_meta[4] or "Unknown")
-    else:
-        heat_rows.append(0.0)
-        heat_sectors.append("Unknown")
-
-if heat_rows:
-    # build heatmap matrix (simple single-row heatmap)
-    heat_df = pd.DataFrame({"ticker": heat_tickers, "pct_change": heat_rows, "sector": heat_sectors})
-    # pivot to a matrix by sector
-    pivot = heat_df.pivot_table(index="sector", columns="ticker", values="pct_change", fill_value=0.0)
-    fig_heat = go.Figure(data=go.Heatmap(z=pivot.values, x=pivot.columns, y=pivot.index, colorscale="RdYlGn"))
-    fig_heat.update_layout(height=300, template=plotly_template)
-    st.plotly_chart(fig_heat, use_container_width=True)
-
-# ---------------------------
-# Multi-stock charts (small multiples)
-# ---------------------------
-st.subheader("Price Charts & Forecasts (Multi-stock)")
-rows = []
-for tk, info in stock_data.items():
-    df = info["df"]
-    fc = info.get("forecast")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["date"], y=df["Close"], name=f"{tk} Close"))
-    if fc is not None:
-        fig.add_trace(go.Scatter(x=fc["ds"], y=fc["yhat"], name="Forecast"))
-        fig.add_trace(go.Scatter(x=pd.concat([fc["ds"], fc["ds"][::-1]]),
-                                 y=pd.concat([fc["yhat_upper"], fc["yhat_lower"][::-1]]),
-                                 fill="toself", fillcolor="rgba(0,200,150,0.08)", line=dict(color="transparent"),
-                                 showlegend=False, name="CI"))
-    fig.update_layout(title=f"{tk}", template=plotly_template, height=300)
-    st.plotly_chart(fig, use_container_width=True)
-
-# ---------------------------
-# Live price panel
-# ---------------------------
-st.subheader("Live Prices")
-live_cols = st.columns(3)
-for idx, tk in enumerate(all_tickers):
-    c = live_cols[idx % 3]
-    lp = st.session_state.get("live_prices", {}).get(tk, {"price": None})
-    p = lp.get("price")
-    ts = lp.get("ts")
-    txt = f"${p:.2f}" if p else "N/A"
-    c.metric(label=tk, value=txt, delta="live")
-
-# ---------------------------
-# Executive summary & signal for primary ticker
-# ---------------------------
-st.subheader("Executive Summary")
-primary_info = stock_data.get(primary)
-if primary_info:
-    st.markdown(f"**{primary_info.get('name')} ({primary})**")
-    st.write(f"- Current price: ${primary_info.get('price'):.2f}")
-    st.write(f"- Forecast avg: ${primary_info.get('forecast_price')}")
-    st.write(f"- Projected change: {primary_info.get('pct_change'):+.2f}%")
-    st.write(f"- Sentiment (news): {sentiment_score:+.1f}")
-    # Signal logic (example)
-    s = primary_info.get("pct_change") or 0.0
-    sent = sentiment_score
-    if s > 3 and sent > 20:
-        sig = "STRONG BUY"
-    elif s > 1 and sent > 5:
-        sig = "BUY"
-    elif s < -3 and sent < -20:
-        sig = "STRONG SELL"
-    elif s < -1 and sent < -5:
-        sig = "SELL"
-    else:
-        sig = "HOLD"
-    st.markdown(f"### Signal: {sig}")
-
-# ---------------------------
-# Slack alert
-# ---------------------------
-if SLACK_WEBHOOK and st.button("Send summary to Slack"):
-    summary = f"InsightSphere — {primary} summary\nSignal: {sig}\nPrice: ${primary_info.get('price'):.2f}\nProj change: {primary_info.get('pct_change'):+.2f}%\nSentiment: {sentiment_score:+.1f}"
-    try:
-        requests.post(SLACK_WEBHOOK, json={"text": summary})
-        st.success("Sent")
+        resp = gen_model.generate_content(prompt)
+        text = getattr(resp, "text", None) or str(resp)
+        return text.strip()
     except Exception as e:
-        st.error(f"Slack failed: {e}")
-st.caption("© 2025 Infosys Springboard • Team: Gopichand, Anshika, Janmejay, Vaishnavi")
+        return f"Insight generation failed: {e}"
+
+st.subheader("AI-Generated Strategic Insights")
+with st.spinner("Generating strategic insights (Gemini)..."):
+    insights_text = generate_gemini_insights(company_name, ticker, float(current_price), proj_price, proj_pct, agg_sentiment)
+st.markdown(f"<div class='glass' style='padding:16px;white-space:pre-wrap'>{insights_text}</div>", unsafe_allow_html=True)
+
+# -------------------- Slack alert --------------------
+if SLACK_WEBHOOK_URL:
+    if st.button("Send Alert to Slack", use_container_width=True):
+        payload = {
+            "text": (
+                f"*InsightSphere Alert*\n*{company_name} ({ticker})*\n"
+                f"Signal: {signal_info['signal']}\n"
+                f"Price: ${float(current_price):.2f}  Forecast(avg): ${proj_price:.2f} ({proj_pct:+.2f}%)\n"
+                f"Sentiment: {agg_sentiment:+.1f}\n\n"
+                f"{insights_text[:800]}..."
+            )
+        }
+        try:
+            r = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
+            if r.status_code == 200:
+                st.success("Alert sent to Slack.")
+            else:
+                st.error(f"Slack returned {r.status_code}: {r.text}")
+        except Exception as e:
+            st.error(f"Failed to send Slack alert: {e}")
+
+st.caption("© 2025 Infosys Springboard Internship — Real-Time Strategic Intelligence Dashboard")
+# close theme wrapper
+st.markdown("</div>", unsafe_allow_html=True)
