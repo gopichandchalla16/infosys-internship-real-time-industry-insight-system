@@ -5,7 +5,7 @@ pandas==2.2.2
 numpy==1.26.4
 
 # Market data
-yfinance==0.2.52
+yfinance==0.2.38
 pandas-datareader==0.10.0
 requests==2.32.3
 feedparser==6.0.11
