@@ -1,18 +1,20 @@
+# Streamlit core
 streamlit==1.36.0
 
 # Core data stack
 pandas==2.2.2
 numpy==1.26.4
 
-# Market data
+# Market data (CRITICAL: Stable yfinance to avoid websockets.sync errors)
 yfinance==0.2.38
-pandas-datareader==0.10.0
+websockets==12.0          # Prevents upgrade to v13+ that breaks on Streamlit Cloud
 requests==2.32.3
 feedparser==6.0.11
+pandas-datareader==0.10.0  # Optional but kept for compatibility
 
 # Forecasting models
 statsmodels==0.14.2
-prophet==1.1.5
+prophet==1.1.5             # Works reliably on Cloud with these pins
 
 # Visualization
 plotly==5.22.0
