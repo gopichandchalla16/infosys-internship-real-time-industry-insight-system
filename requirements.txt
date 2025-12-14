@@ -1,12 +1,22 @@
-streamlit==1.36.0
-pandas==2.2.2
-numpy==1.26.4
-yfinance==0.2.38
-requests==2.32.3
-feedparser==6.0.11
-plotly==5.22.0
-statsmodels==0.14.2
-prophet==1.1.5
-google-generativeai==0.5.2
-wikipedia==1.4.0
-websockets==12.0
+# Core Data & Analysis
+yfinance
+pandas
+numpy
+feedparser
+statsmodels
+wikipedia
+requests
+
+# Forecasting (Prophet)
+# Prophet requires pystan (a C++ dependency)
+pystan==2.19.1.1 
+prophet
+
+# Visualization (Dashboard)
+plotly
+
+# LLM & NLP
+google-generativeai
+
+# Frontend Framework
+streamlit
