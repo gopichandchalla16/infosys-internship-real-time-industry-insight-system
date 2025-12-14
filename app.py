@@ -1,4 +1,5 @@
 import re
+import time
 import requests
 import feedparser
 import numpy as np
@@ -50,9 +51,10 @@ st.markdown("""
 .metric-title { color:#94a3b8; font-size:0.9rem; }
 .metric-value { color:#e5e7eb; font-size:1.4rem; font-weight:700; }
 .badge {
-    padding:8px 14px;
-    border-radius:12px;
+    padding:6px 12px;
+    border-radius:10px;
     font-weight:700;
+    display:inline-block;
 }
 .section {
     background:#020617;
@@ -68,6 +70,7 @@ st.markdown("""
 # ============================================================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", "")
+ALPHA_VANTAGE_API_KEY = st.secrets.get("ALPHA_VANTAGE_API_KEY", "")
 
 if not GEMINI_API_KEY:
     st.error("❌ GEMINI_API_KEY is mandatory. Add it in Streamlit Secrets.")
@@ -105,6 +108,7 @@ def resolve_symbol(query: str):
         "sol": "SOL-USD"
     }
     q = query.strip().lower()
+
     if q in crypto_map:
         return crypto_map[q], "Crypto"
 
@@ -116,7 +120,7 @@ def resolve_symbol(query: str):
     except Exception:
         pass
 
-    # Yahoo search API
+    # Yahoo Finance search API
     try:
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query.replace(' ', '+')}"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
@@ -136,21 +140,72 @@ if not symbol:
     st.stop()
 
 # ============================================================
-# MARKET DATA
+# MARKET DATA (YAHOO → YAHOO HISTORY → ALPHA VANTAGE)
 # ============================================================
 @st.cache_data(ttl=600)
-def fetch_market(symbol):
-    df = yf.download(symbol, period="1y", progress=False)
-    if df is None or df.empty:
-        return None
-    df = df.reset_index()[["Date", "Close"]]
-    df.columns = ["ds", "y"]
-    return df
+def fetch_market(symbol: str):
+    # ---------- Layer 1: Yahoo download with headers ----------
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        })
+        df = yf.download(
+            symbol,
+            period="1y",
+            auto_adjust=True,
+            progress=False,
+            session=session
+        )
+        if not df.empty:
+            df = df.reset_index()[["Date", "Close"]]
+            df.columns = ["ds", "y"]
+            return df, "Yahoo Finance"
+    except Exception:
+        pass
 
-market_df = fetch_market(symbol)
+    # ---------- Layer 2: Yahoo Ticker.history ----------
+    try:
+        t = yf.Ticker(symbol)
+        hist = t.history(period="1y", auto_adjust=True)
+        if not hist.empty:
+            hist = hist.reset_index()[["Date", "Close"]]
+            hist.columns = ["ds", "y"]
+            return hist, "Yahoo Finance"
+    except Exception:
+        pass
 
-if market_df is None:
-    st.error("❌ No historical data available.")
+    # ---------- Layer 3: Alpha Vantage ----------
+    if ALPHA_VANTAGE_API_KEY:
+        try:
+            url = "https://www.alphavantage.co/query"
+            params = {
+                "function": "TIME_SERIES_DAILY_ADJUSTED",
+                "symbol": symbol.replace("-USD", ""),
+                "outputsize": "compact",
+                "apikey": ALPHA_VANTAGE_API_KEY
+            }
+            r = requests.get(url, params=params, timeout=12)
+            data = r.json()
+            key = next((k for k in data.keys() if "Time Series" in k), None)
+            if key:
+                rows = []
+                for d, v in data[key].items():
+                    rows.append({
+                        "ds": pd.to_datetime(d),
+                        "y": float(v.get("5. adjusted close", v.get("4. close")))
+                    })
+                df = pd.DataFrame(rows).sort_values("ds")
+                return df, "Alpha Vantage"
+        except Exception:
+            pass
+
+    return None, None
+
+market_df, data_source = fetch_market(symbol)
+
+if market_df is None or market_df.empty:
+    st.error("❌ Could not fetch market data. Please retry.")
     st.stop()
 
 current_price = float(market_df["y"].iloc[-1])
@@ -251,7 +306,10 @@ else:
 st.title("Infosys InsightSphere")
 st.caption("Real-Time Industry Insight & Strategic Intelligence Dashboard")
 
-st.markdown(f"Viewing **{user_input} ({symbol})** — Asset Type: **{asset_type}**")
+st.markdown(f"""
+Viewing **{user_input} ({symbol})** — Asset Type: **{asset_type}**  
+<span class='badge'>Data Source: {data_source}</span>
+""", unsafe_allow_html=True)
 
 c1,c2,c3,c4,c5 = st.columns(5)
 c1.markdown(f"<div class='metric-card'><div class='metric-title'>Current Price</div><div class='metric-value'>${current_price:.2f}</div></div>", unsafe_allow_html=True)
@@ -277,7 +335,7 @@ if asset_type == "Equity":
     st.markdown(f"**Website:** {company_info.get('website','N/A')}")
     st.info(wiki_summary)
 
-# ---------------- Executive Summary (Gemini Safe) ----------------
+# ---------------- Executive Summary ----------------
 st.subheader("Executive Strategic Summary")
 try:
     prompt = f"""
