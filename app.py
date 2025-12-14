@@ -4,23 +4,23 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
-import yfinance as yf
 from datetime import datetime, timedelta
 
+import yfinance as yf
 import plotly.graph_objects as go
 from statsmodels.tsa.arima.model import ARIMA
 
-# ---------------- Prophet (Primary) ----------------
+# ---------- Optional Prophet ----------
 try:
     from prophet import Prophet
     PROPHET_AVAILABLE = True
 except Exception:
     PROPHET_AVAILABLE = False
 
-# ---------------- Gemini (MANDATORY) ----------------
+# ---------- Gemini ----------
 import google.generativeai as genai
 
-# ---------------- Wikipedia ----------------
+# ---------- Wikipedia ----------
 try:
     import wikipedia
     WIKI_AVAILABLE = True
@@ -29,7 +29,7 @@ except Exception:
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIG + UI
 # ============================================================
 st.set_page_config(
     page_title="Infosys InsightSphere",
@@ -39,11 +39,11 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.metric {background:#0f172a; padding:16px; border-radius:14px; text-align:center;}
-.metric-title {color:#94a3b8; font-size:0.9rem;}
-.metric-value {color:#e5e7eb; font-size:1.5rem; font-weight:700;}
-.badge {padding:8px 16px; border-radius:12px; font-weight:700; font-size:1.1rem;}
-.section {background:#020617; padding:20px; border-radius:18px; margin-bottom:20px;}
+.metric {background:#0f172a;padding:16px;border-radius:14px;text-align:center;}
+.metric h3{color:#94a3b8;font-size:0.9rem;margin-bottom:4px;}
+.metric h2{color:#e5e7eb;font-size:1.4rem;}
+.badge{padding:8px 18px;border-radius:14px;font-weight:700;color:white;}
+.card{background:#020617;padding:22px;border-radius:18px;margin-bottom:20px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,47 +51,45 @@ st.markdown("""
 # SECRETS
 # ============================================================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-SLACK_WEBHOOK = st.secrets.get("SLACK_WEBHOOK_URL", "")
+SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", "")
 
 if not GEMINI_API_KEY:
-    st.error("❌ GEMINI_API_KEY is mandatory.")
+    st.error("❌ GEMINI_API_KEY is required in Streamlit Secrets.")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
-GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")
+GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")  # Most stable
 
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR (USER FRIENDLY)
 # ============================================================
 with st.sidebar:
     st.header("🔎 Asset Selection")
-    user_input = st.text_input(
-        "Company / Crypto / Ticker",
+    user_query = st.text_input(
+        "Company name or Ticker",
         value="Tesla",
-        help="Examples: Tesla, AAPL, TSLA, BTC, ETH"
+        help="Examples: Tesla, Apple, Reliance, TSLA, AAPL, BTC"
     )
     horizon = st.slider("Forecast Horizon (Days)", 3, 14, 7)
     run = st.button("🚀 Run Analysis", use_container_width=True)
 
 if not run:
-    st.info("Enter an asset and click **Run Analysis**.")
+    st.info("Enter a company name or ticker and click **Run Analysis**.")
     st.stop()
 
 
 # ============================================================
-# SYMBOL RESOLUTION
+# TICKER RESOLUTION (NO FAKE COMPANIES)
 # ============================================================
 def resolve_symbol(query: str):
-    crypto = {
-        "btc": "BTC-USD", "bitcoin": "BTC-USD",
-        "eth": "ETH-USD", "ethereum": "ETH-USD"
-    }
+    crypto = {"btc": "BTC-USD", "bitcoin": "BTC-USD", "eth": "ETH-USD"}
     q = query.lower().strip()
+
     if q in crypto:
         return crypto[q], "Crypto"
 
-    # Try direct ticker
+    # Direct ticker check
     try:
         df = yf.download(query.upper(), period="5d", progress=False)
         if not df.empty:
@@ -102,27 +100,27 @@ def resolve_symbol(query: str):
     # Yahoo search
     try:
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query.replace(' ', '+')}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        if r.status_code == 200:
-            for item in r.json().get("quotes", []):
-                if item.get("quoteType") in ["EQUITY", "CRYPTOCURRENCY"]:
-                    return item["symbol"], item["quoteType"].title()
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+        data = r.json()
+        for item in data.get("quotes", []):
+            if item.get("quoteType") in ["EQUITY", "CRYPTOCURRENCY"]:
+                return item.get("symbol"), item.get("quoteType").title()
     except:
         pass
 
     return None, None
 
 
-symbol, asset_type = resolve_symbol(user_input)
+symbol, asset_type = resolve_symbol(user_query)
 if not symbol:
-    st.error("❌ Could not resolve asset.")
+    st.error("❌ Could not identify a real company or asset. Please try a valid name.")
     st.stop()
 
-st.success(f"Resolved: **{symbol}** ({asset_type})")
+st.success(f"Resolved asset: **{symbol}** ({asset_type})")
 
 
 # ============================================================
-# MARKET DATA (ROBUST + SAFE FALLBACK)
+# MARKET DATA (ROBUST + DEMO FALLBACK)
 # ============================================================
 @st.cache_data(ttl=600)
 def fetch_market(symbol):
@@ -134,42 +132,42 @@ def fetch_market(symbol):
             return df, "Yahoo Finance"
     except:
         pass
-    return None, "Unavailable"
+
+    # Demo fallback (guaranteed)
+    dates = pd.date_range(end=datetime.today(), periods=180)
+    prices = np.cumsum(np.random.normal(0, 1, 180)) + 100
+    demo = pd.DataFrame({"ds": dates, "y": prices})
+    return demo, "Demo Fallback"
 
 
 market_df, source = fetch_market(symbol)
+current_price = float(market_df["y"].iloc[-1])
 
-# -------- FINAL SAFETY NET (NO CRASH EVER) --------
-if market_df is None:
+if source == "Demo Fallback":
     st.warning(
         "⚠️ Live market data temporarily unavailable (provider rate limits). "
-        "Showing demo data for analytical demonstration."
+        "Showing **demo data** for analytical demonstration."
     )
 
-    dates = pd.date_range(end=datetime.today(), periods=180)
-    prices = np.linspace(420, 460, len(dates)) + np.random.normal(0, 2, len(dates))
-
-    market_df = pd.DataFrame({
-        "ds": dates.date,
-        "y": prices
-    })
-    source = "Demo Fallback"
-
-
-current_price = float(market_df["y"].iloc[-1])
-st.caption(f"Data source: {source} • {len(market_df)} days")
+st.caption(f"Data source: **{source}** • {len(market_df)} days")
 
 
 # ============================================================
-# COMPANY PROFILE
+# COMPANY PROFILE (NEVER EMPTY)
 # ============================================================
-company_info = {"name": user_input}
+company = {
+    "name": user_query,
+    "sector": "N/A",
+    "industry": "N/A",
+    "country": "N/A",
+    "website": "N/A"
+}
 
 if asset_type == "Equity":
     try:
         info = yf.Ticker(symbol).info
-        company_info.update({
-            "name": info.get("longName", user_input),
+        company.update({
+            "name": info.get("longName", user_query),
             "sector": info.get("sector", "N/A"),
             "industry": info.get("industry", "N/A"),
             "country": info.get("country", "N/A"),
@@ -178,64 +176,66 @@ if asset_type == "Equity":
     except:
         pass
 
+    if WIKI_AVAILABLE:
+        try:
+            wiki_page = wikipedia.page(company["name"])
+            company["website"] = company["website"] if company["website"] != "N/A" else wiki_page.url
+            company["country"] = company["country"] if company["country"] != "N/A" else "Public Company"
+            wiki_summary = wikipedia.summary(company["name"], sentences=4)
+        except:
+            wiki_summary = "Wikipedia summary unavailable."
+else:
+    wiki_summary = ""
+
 
 # ============================================================
-# NEWS SENTIMENT (GEMINI)
+# NEWS SENTIMENT (RATE SAFE)
 # ============================================================
 @st.cache_data(ttl=1800)
 def gemini_sentiment(query):
-    url = f"https://news.google.com/rss/search?q={query.replace(' ', '+')}"
     try:
-        feed = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10).text
+        url = f"https://news.google.com/rss/search?q={query.replace(' ', '+')}"
+        feed = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text
         import feedparser
         feed = feedparser.parse(feed)
 
         scores = []
-        for e in feed.entries[:6]:
-            text = f"{e.title} {getattr(e,'summary','')}"
-            prompt = (
-                "Rate sentiment from -100 to +100 as an integer only:\n\n"
-                f"{text[:1000]}"
-            )
+        for e in feed.entries[:5]:
+            prompt = f"Return sentiment score -100 to +100 as integer:\n{e.title}"
             try:
                 r = GEMINI_MODEL.generate_content(prompt)
                 m = re.search(r"-?\d+", r.text)
                 scores.append(int(m.group()) if m else 0)
             except:
                 scores.append(0)
-
         return float(np.mean(scores)) if scores else 0.0
     except:
         return 0.0
 
 
-sentiment = gemini_sentiment(user_input)
+sentiment = gemini_sentiment(user_query)
 
 
 # ============================================================
 # FORECASTING (PROPHET → ARIMA)
 # ============================================================
 try:
-    if PROPHET_AVAILABLE:
-        m = Prophet(daily_seasonality=False, weekly_seasonality=True)
-        m.fit(market_df.rename(columns={"ds": "ds", "y": "y"}))
+    if PROPHET_AVAILABLE and source != "Demo Fallback":
+        m = Prophet()
+        dfp = market_df.rename(columns={"ds": "ds", "y": "y"})
+        m.fit(dfp)
         future = m.make_future_dataframe(periods=horizon)
-        fc = m.predict(future)
-        forecast_price = fc["yhat"].tail(horizon).mean()
+        forecast = m.predict(future)
+        forecast_price = forecast["yhat"].tail(horizon).mean()
         model_used = "Prophet"
     else:
         raise Exception
 except:
-    series = market_df["y"]
-    try:
-        model = ARIMA(series, order=(5, 1, 0))
-        fit = model.fit()
-        forecast_price = fit.forecast(horizon).mean()
-        model_used = "ARIMA"
-    except:
-        forecast_price = current_price
-        model_used = "Static"
-
+    model = ARIMA(market_df["y"], order=(5, 1, 0))
+    fit = model.fit()
+    pred = fit.forecast(horizon)
+    forecast_price = float(pred.mean())
+    model_used = "ARIMA"
 
 pct_change = ((forecast_price - current_price) / current_price) * 100
 
@@ -245,11 +245,11 @@ pct_change = ((forecast_price - current_price) / current_price) * 100
 # ============================================================
 if pct_change > 3 and sentiment > 15:
     signal, color = "STRONG BUY", "#16a34a"
-elif pct_change > 1.5:
+elif pct_change > 1:
     signal, color = "BUY", "#22c55e"
 elif pct_change < -3 and sentiment < -15:
     signal, color = "STRONG SELL", "#dc2626"
-elif pct_change < -1.5:
+elif pct_change < -1:
     signal, color = "SELL", "#ef4444"
 else:
     signal, color = "HOLD", "#eab308"
@@ -259,7 +259,7 @@ else:
 # DASHBOARD
 # ============================================================
 st.title("📊 Infosys InsightSphere")
-st.markdown(f"### {company_info['name']} ({symbol}) • {asset_type}")
+st.subheader(f"{company['name']} ({symbol}) • {asset_type}")
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Current Price", f"${current_price:.2f}")
@@ -268,81 +268,56 @@ c3.metric("Projected Move", f"{pct_change:+.2f}%")
 c4.metric("Sentiment", f"{sentiment:+.1f}")
 c5.metric("Model", model_used)
 
-st.markdown(
-    f"<div class='badge' style='background:{color}; color:white;'>{signal}</div>",
-    unsafe_allow_html=True
-)
+st.markdown(f"<div class='badge' style='background:{color}'>{signal}</div>", unsafe_allow_html=True)
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=market_df["ds"],
-    y=market_df["y"],
-    name="Price",
-    line=dict(color="#3b82f6")
-))
-fig.update_layout(height=450, template="plotly_dark")
+fig.add_trace(go.Scatter(x=market_df["ds"], y=market_df["y"], name="Price"))
+fig.update_layout(height=420, template="plotly_dark")
 st.plotly_chart(fig, use_container_width=True)
 
-
-# ============================================================
-# COMPANY OVERVIEW
-# ============================================================
 if asset_type == "Equity":
     st.subheader("🏢 Company Overview")
     st.write(
-        f"**Sector:** {company_info.get('sector','N/A')} | "
-        f"**Industry:** {company_info.get('industry','N/A')} | "
-        f"**Country:** {company_info.get('country','N/A')}"
+        f"**Sector:** {company['sector']} | "
+        f"**Industry:** {company['industry']} | "
+        f"**Country:** {company['country']}"
     )
-    if company_info.get("website"):
-        st.write(f"**Website:** {company_info['website']}")
-
-    if WIKI_AVAILABLE:
-        try:
-            st.info(wikipedia.summary(company_info["name"], sentences=4))
-        except:
-            pass
+    if company["website"] != "N/A":
+        st.write(f"**Website:** {company['website']}")
+    st.info(wiki_summary)
 
 
 # ============================================================
-# EXECUTIVE SUMMARY (GEMINI)
+# EXECUTIVE SUMMARY (SAFE)
 # ============================================================
-st.subheader("📝 Executive Strategic Summary")
+fallback = f"""
+**Executive Overview**
+
+{company['name']} is currently trading at ${current_price:.2f}.
+The {horizon}-day outlook suggests a {pct_change:+.2f}% move.
+Overall signal: **{signal}** based on technical and sentiment indicators.
+"""
+
 try:
     prompt = f"""
-    Provide an executive market intelligence summary for:
-    {company_info['name']} ({symbol})
-
-    Current Price: {current_price}
-    Forecast ({horizon}d): {forecast_price:.2f} ({pct_change:+.2f}%)
-    Sentiment: {sentiment:+.1f}
-    Signal: {signal}
-
-    Include key drivers, risks, opportunities, and recommendation.
-    """
+Provide executive summary for {company['name']} ({symbol})
+Price: {current_price}
+Forecast: {forecast_price}
+Sentiment: {sentiment}
+Signal: {signal}
+"""
     summary = GEMINI_MODEL.generate_content(prompt).text
-    st.write(summary)
 except:
-    st.warning("AI summary temporarily unavailable.")
+    summary = fallback
 
+st.subheader("📝 Executive Strategic Summary")
+st.write(summary)
 
 # ============================================================
 # SLACK ALERT
 # ============================================================
-if SLACK_WEBHOOK and st.button("📤 Send Slack Alert"):
-    payload = {
-        "text": (
-            f"*InsightSphere Alert*\n"
-            f"{company_info['name']} ({symbol})\n"
-            f"Signal: {signal}\n"
-            f"Price: ${current_price:.2f} → ${forecast_price:.2f}\n"
-            f"Sentiment: {sentiment:+.1f}"
-        )
-    }
-    try:
-        requests.post(SLACK_WEBHOOK, json=payload, timeout=10)
-        st.success("Slack alert sent.")
-    except:
-        st.error("Slack delivery failed.")
+if SLACK_WEBHOOK_URL and st.button("📤 Send Slack Alert"):
+    payload = {"text": f"{company['name']} ({symbol})\nSignal: {signal}\nPrice: ${current_price:.2f}"}
+    requests.post(SLACK_WEBHOOK_URL, json=payload)
 
 st.caption("© 2025 Infosys Springboard Internship — Real-Time Strategic Intelligence System")
