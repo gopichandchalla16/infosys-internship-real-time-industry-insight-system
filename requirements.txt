@@ -1,20 +1,20 @@
-# Streamlit core
+# Core framework
 streamlit==1.36.0
 
-# Core data stack
+# Data processing
 pandas==2.2.2
 numpy==1.26.4
 
-# Market data (CRITICAL: Stable yfinance to avoid websockets.sync errors)
+# Market data - STABLE CONFIG TO FIX FETCH ISSUES ON STREAMLIT CLOUD
 yfinance==0.2.38
-websockets==12.0          # Prevents upgrade to v13+ that breaks on Streamlit Cloud
+websockets==12.0                  # Critical: Prevents breaking upgrade to v13+
 requests==2.32.3
 feedparser==6.0.11
-pandas-datareader==0.10.0  # Optional but kept for compatibility
+pandas-datareader==0.10.0         # Kept for any legacy compatibility
 
-# Forecasting models
+# Forecasting
 statsmodels==0.14.2
-prophet==1.1.5             # Works reliably on Cloud with these pins
+prophet==1.1.5
 
 # Visualization
 plotly==5.22.0
@@ -22,5 +22,5 @@ plotly==5.22.0
 # AI / LLM
 google-generativeai==0.5.2
 
-# Company profile enrichment
+# Enrichment
 wikipedia==1.4.0
