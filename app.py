@@ -5,93 +5,110 @@ import yfinance as yf
 import requests
 import feedparser
 import wikipedia
-import json
 import os
 import random
+import sys
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import sys
 
-# --- Conditional Imports and Configuration ---
+# --- 1. CONFIGURATION AND CONDITIONAL IMPORTS ---
 
 # Global settings
 random.seed(42)
 np.random.seed(42)
 pd.set_option("display.max_columns", 50)
-pd.set_option("display.width", 160)
 FORECAST_DAYS = 7
-DEFAULT_COMPANY_NAME = "Tesla, Inc."
-DEFAULT_TICKER = "TSLA"
+DEFAULT_COMPANY_NAME = "Infosys Ltd."
+DEFAULT_TICKER = "INFY"
 INVALID_COMPANY_KEYWORDS = {"abc", "xyz", "test", "testing", "demo", "sample", "qwerty", "asdf", "fake", "dummy", "123", "456"}
 
 # LLM & Forecasting Setup
+# Priority: Streamlit secrets > Environment variable
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
+PROPHET_AVAILABLE = False
 try:
     from prophet import Prophet
     PROPHET_AVAILABLE = True
 except Exception:
-    PROPHET_AVAILABLE = False
+    pass # Prophet (and pystan) is a heavy dependency and might fail in some environments
 
+GEMINI_ENABLED = False
+GEMINI_MODEL = None
 try:
     import google.generativeai as genai
     from statsmodels.tsa.arima.model import ARIMA
-    GEMINI_ENABLED = False
-    GEMINI_MODEL = None
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        GEMINI_MODEL = genai.GenerativeModel("gemini-2.0-flash")
+        # Use a model that can handle system instructions
+        GEMINI_MODEL = genai.GenerativeModel("gemini-2.5-flash") 
         GEMINI_ENABLED = True
 except Exception:
-    GEMINI_ENABLED = False
+    pass # Fails if API key or library is missing/broken
     
-# --- Data Fetching & Preprocessing (Adapted from data_fetcher.py) ---
+# SYSTEM INSTRUCTION for LLM Scoring
+SYSTEM_INSTRUCTION = (
+    "You are an expert financial sentiment analyst. "
+    "Analyze the following text regarding a publicly traded company. "
+    "Respond ONLY with a single integer score between -100 (Extremely Negative) and +100 (Extremely Positive). "
+    "Do not include any other text, explanation, or punctuation."
+)
 
-@st.cache_data(ttl=3600) # Cache the result for 1 hour
+# =======================================================
+# 2. STREAMLIT PAGE CONFIGURATION (MUST BE HERE)
+# =======================================================
+st.set_page_config(layout="wide", page_title="Strategic Intelligence System")
+
+# --- 3. DATA FETCHING (with Streamlit Caching) ---
+
+@st.cache_data(ttl=3600, show_spinner="Fetching Company Profile...")
 def fetch_company_info(company_name: str, ticker: str):
     """Fetches Wikipedia and Yahoo Finance summaries."""
     # Wikipedia Summary
+    wiki_summary = "Wikipedia summary not available."
     try:
         wikipedia.set_lang("en")
         results = wikipedia.search(company_name)
         wiki_summary = wikipedia.summary(results[0], sentences=4) if results else "No Wikipedia page found."
     except Exception:
-        wiki_summary = "Wikipedia summary not available."
+        pass
 
     # Yahoo Finance Info
     yf_info = yf.Ticker(ticker).info
     return {
         "wiki_summary": wiki_summary,
-        "sector": yf_info.get("sector"),
-        "industry": yf_info.get("industry"),
-        "country": yf_info.get("country"),
-        "website": yf_info.get("website"),
-        "businessSummary": yf_info.get("longBusinessSummary"),
-        "longName": yf_info.get("longName")
+        "sector": yf_info.get("sector", "N/A"),
+        "industry": yf_info.get("industry", "N/A"),
+        "country": yf_info.get("country", "N/A"),
+        "website": yf_info.get("website", "N/A"),
+        "businessSummary": yf_info.get("longBusinessSummary", "Summary not available."),
+        "longName": yf_info.get("longName", company_name)
     }
 
-@st.cache_data(ttl=300) # Cache the result for 5 minutes
+@st.cache_data(ttl=300, show_spinner="Fetching Market Data...")
 def fetch_historical_data(ticker: str):
     """Fetch historical OHLCV data and current metrics."""
+    # Fetch 1 year of daily data
     df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=False).dropna().reset_index()
     df = df.rename(columns={"Date": "date"})
 
     t = yf.Ticker(ticker)
+    # Get current price from a recent history check
     hist_5d = t.history(period="5d")
     current_price = float(hist_5d["Close"].iloc[-1]) if not hist_5d.empty else None
     market_cap = t.info.get("marketCap")
 
     return df, current_price, market_cap
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner="Fetching News & Generating Mock Social Data...")
 def fetch_sentiment_data(company_name: str):
     """Fetch Google News and generate mock social data."""
-    # 1. Google News
+    
+    # 1. Google News Fetcher
     query = company_name.replace(" ", "+")
     url = f"https://news.google.com/rss/search?q={query}+stock&hl=en-US&gl=US&ceid=US:en"
     feed = feedparser.parse(url)
-    
     news_rows = []
     for entry in feed.entries[:10]:
         title = entry.get("title", "").strip()
@@ -100,14 +117,13 @@ def fetch_sentiment_data(company_name: str):
         try: pub_date = datetime(*entry.published_parsed[:6])
         except: pub_date = datetime.now()
         news_rows.append({"source": "news", "text": text, "link": entry.get("link", ""), "published_at": pub_date})
-    
     news_df = pd.DataFrame(news_rows)
 
-    # 2. Mock Social Data
+    # 2. Mock Social Data Generator
     templates = {
-        "positive": [f"{company_name} smashed earnings targets! Bullish momentum. (positive)", f"Future looks bright for {company_name}. (positive)"],
+        "positive": [f"{company_name} smashed earnings targets! Bullish momentum is here. (positive)", f"Future looks bright for {company_name}. Major new product line announced. (positive)"],
         "negative": [f"{company_name} shows weak outlook today. Investors are nervous. (negative)", f"Analyst downgrade for {company_name}. Sell signal is flashing. (negative)"],
-        "neutral": [f"Watching {company_name} closely ahead of next week's meeting. (neutral)", f"Market consolidation around {company_name}. (neutral)"]
+        "neutral": [f"Watching {company_name} closely ahead of next week's meeting. (neutral)", f"Market consolidation around {company_name}. Sideways trading likely. (neutral)"]
     }
     twitter_rows = []
     end_time = datetime.now()
@@ -124,9 +140,7 @@ def fetch_sentiment_data(company_name: str):
     corpus_df = pd.concat([news_df[cols], twitter_df[cols]], ignore_index=True)
     return corpus_df.sort_values("published_at", ascending=False).reset_index(drop=True)
 
-# --- Sentiment Analysis (Adapted from sentiment_analyzer.py) ---
-
-SYSTEM_INSTRUCTION = "You are an expert financial sentiment analyst. Analyze the following text regarding a publicly traded company. Respond ONLY with a single integer score between -100 (Extremely Negative) and +100 (Extremely Positive). Do not include any other text, explanation, or punctuation."
+# --- 4. SENTIMENT ANALYSIS ---
 
 def score_sentiment_llm(text: str) -> int:
     """Scores sentiment using the Gemini LLM."""
@@ -149,35 +163,36 @@ def score_sentiment_rule_based_fallback(text: str) -> int:
     for word in negative_words: score -= 15 * text_lower.count(word)
     return max(-100, min(100, score))
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner="Running Sentiment Scoring...")
 def apply_sentiment_scoring(corpus_df: pd.DataFrame):
     """Applies the LLM or fallback scorer to the entire corpus."""
     corpus_df["sentiment"] = 0
     
     if GEMINI_ENABLED and not corpus_df.empty:
-        st.info("Using Gemini LLM for advanced sentiment scoring...")
+        # Use a placeholder in the UI for the scoring process
+        # The spinner in @st.cache_data handles the time, no extra st.info needed here.
         for index, row in corpus_df.iterrows():
             try:
                 score = score_sentiment_llm(row["text"])
                 corpus_df.loc[index, "sentiment"] = score
             except:
-                # Fallback on individual LLM call failure
                 corpus_df.loc[index, "sentiment"] = score_sentiment_rule_based_fallback(row["text"])
     else:
-        st.info("Using Rule-Based Fallback for sentiment scoring...")
         corpus_df["sentiment"] = corpus_df["text"].apply(score_sentiment_rule_based_fallback)
     
     sent_norm = corpus_df["sentiment"].mean() if not corpus_df.empty else 0.0
     return corpus_df, sent_norm
 
-# --- Forecasting (Adapted from forecaster.py) ---
+# --- 5. TIME-SERIES FORECASTING ---
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner="Running Time-Series Forecasting...")
 def run_time_series_forecasting(df: pd.DataFrame):
     """Runs Prophet or ARIMA for forecasting."""
     if df.empty:
         return pd.DataFrame(), "N/A", pd.DataFrame()
 
+    model_used = "ARIMA" # Default to ARIMA
+    
     if PROPHET_AVAILABLE:
         try:
             model_used = "Prophet"
@@ -187,40 +202,48 @@ def run_time_series_forecasting(df: pd.DataFrame):
             future = model.make_future_dataframe(periods=FORECAST_DAYS)
             forecast_df = model.predict(future)
             forecast_df = forecast_df[["ds", "yhat", "yhat_lower", "yhat_upper"]].rename(columns={"ds": "date"})
-            last_hist_date = df["date"].max()
-            future_forecast_df = forecast_df[forecast_df["date"] > last_hist_date].copy()
             
         except Exception:
-            PROPHET_AVAILABLE = False # Disable for future runs if it fails
-    
-    if not PROPHET_AVAILABLE:
+            model_used = "ARIMA" # Fallback if Prophet runs but fails during fit/predict
+
+    if model_used == "ARIMA":
         # ARIMA Fallback
-        model_used = "ARIMA"
-        train_data = df["Close"].values[-60:]
-        model = ARIMA(train_data, order=(1, 1, 0))
-        model_fit = model.fit()
-        forecast_results = model_fit.get_forecast(steps=FORECAST_DAYS)
-        yhat = forecast_results.predicted_mean
-        conf_int = forecast_results.conf_int(alpha=0.10) 
-        
-        last_date = df["date"].iloc[-1]
-        forecast_dates = [last_date + timedelta(days=i) for i in range(1, FORECAST_DAYS + 1)]
-        future_forecast_df = pd.DataFrame({
-            "date": forecast_dates,
-            "yhat": yhat,
-            "yhat_lower": conf_int.iloc[:, 0].values,
-            "yhat_upper": conf_int.iloc[:, 1].values
-        })
-        forecast_df = pd.concat([
-            df.rename(columns={"Close": "yhat"})[["date", "yhat"]], 
-            future_forecast_df
-        ], ignore_index=True)
-        forecast_df["yhat_lower"] = forecast_df["yhat_lower"].fillna(forecast_df["yhat"])
-        forecast_df["yhat_upper"] = forecast_df["yhat_upper"].fillna(forecast_df["yhat"])
+        try:
+            train_data = df["Close"].values[-60:]
+            model = ARIMA(train_data, order=(1, 1, 0))
+            model_fit = model.fit()
+            forecast_results = model_fit.get_forecast(steps=FORECAST_DAYS)
+            yhat = forecast_results.predicted_mean
+            conf_int = forecast_results.conf_int(alpha=0.10) 
+            
+            last_date = df["date"].iloc[-1]
+            forecast_dates = [last_date + timedelta(days=i) for i in range(1, FORECAST_DAYS + 1)]
+            
+            forecast_df_future = pd.DataFrame({
+                "date": forecast_dates,
+                "yhat": yhat,
+                "yhat_lower": conf_int.iloc[:, 0].values,
+                "yhat_upper": conf_int.iloc[:, 1].values
+            })
+            
+            # Combine historical and forecast for plotting consistency
+            forecast_df = df.rename(columns={"Close": "yhat"})[["date", "yhat"]].copy()
+            forecast_df["yhat_lower"] = forecast_df["yhat"]
+            forecast_df["yhat_upper"] = forecast_df["yhat"]
+            forecast_df = pd.concat([forecast_df, forecast_df_future], ignore_index=True)
+
+        except Exception:
+            st.error("ARIMA forecasting also failed.")
+            return pd.DataFrame(), "ARIMA (Failed)", pd.DataFrame()
+
+
+    # Filter for future forecast data for metrics
+    last_hist_date = df["date"].max()
+    future_forecast_df = forecast_df[forecast_df["date"] > last_hist_date].copy()
 
     return forecast_df, model_used, future_forecast_df
 
-# --- Signal Computation & Helpers (Adapted from alert_system.py) ---
+# --- 6. SIGNAL COMPUTATION & HELPERS ---
 
 def determine_forecast_trend(future_forecast_df: pd.DataFrame, current_price: float):
     """Calculates the 7-day predicted price change and trend direction."""
@@ -255,7 +278,7 @@ def compute_risk_profile(market_df: pd.DataFrame, corpus_df: pd.DataFrame):
     """Generates synthetic risk indices (0-100)."""
     risk = {}
     
-    # 1. Volatility Risk (based on historical standard deviation of daily returns)
+    # 1. Volatility Risk
     market_df["daily_return"] = market_df["Close"].pct_change()
     volatility = market_df["daily_return"].std() * np.sqrt(252) * 100
     risk["Volatility"] = min(100, max(0, volatility * 2))
@@ -267,25 +290,28 @@ def compute_risk_profile(market_df: pd.DataFrame, corpus_df: pd.DataFrame):
     else:
         risk["Sentiment Dispersion"] = 50
 
-    # 3. Liquidity Risk (inverse of average daily volume)
+    # 3. Liquidity Risk
     avg_volume = market_df["Volume"].mean()
     risk["Liquidity"] = min(100, max(0, 100 - (avg_volume / 1e8))) 
     
     return risk
 
-# --- Plotly Dashboard Component (Adapted from dashboard.py) ---
+# --- 7. PLOTLY DASHBOARD COMPONENT ---
 
 def plot_price_and_forecast(market_df, forecast_df, future_forecast_df, ticker):
     """Generates the Plotly chart for historical data and forecast."""
     fig = go.Figure()
 
+    # Get Historical Data (Filter forecast_df to only show historical points)
+    hist_data = forecast_df[forecast_df["date"] <= market_df["date"].max()]
+    
     # Historical Price
     fig.add_trace(go.Scatter(
-        x=market_df["date"], y=market_df["Close"], mode="lines", 
+        x=hist_data["date"], y=hist_data["yhat"], mode="lines", 
         name="Historical Close", line=dict(color='blue')
     ))
 
-    # Forecast Line (starting from the last historical date)
+    # Forecast Line
     future_dates = future_forecast_df["date"]
     fig.add_trace(go.Scatter(
         x=future_dates, y=future_forecast_df["yhat"], mode="lines+markers", 
@@ -309,80 +335,89 @@ def plot_price_and_forecast(market_df, forecast_df, future_forecast_df, ticker):
     )
     return fig
 
-# --- Streamlit Application Layout ---
+# --- 8. STREAMLIT APPLICATION LAYOUT ---
 
 def main_app():
-    st.set_page_config(layout="wide", page_title="Strategic Intelligence System")
 
     # --- Sidebar for Input ---
     with st.sidebar:
         st.title("Settings")
-        user_company_input = st.text_input("Enter Company Name", value=DEFAULT_COMPANY_NAME)
-        st.caption("E.g., Tesla, Apple Inc., Infosys Ltd.")
+        user_company_input = st.text_input("Enter Company Name/Ticker", value=DEFAULT_COMPANY_NAME)
+        st.caption("E.g., Infosys Ltd., MSFT, GOOGL")
+        
+        st.markdown("---")
         
         if not GEMINI_API_KEY:
             st.warning("LLM API Key not found! Sentiment will use a rule-based fallback.")
         elif GEMINI_ENABLED:
             st.success("Gemini LLM is configured and active.")
-        
+        else:
+            st.warning("Gemini LLM is configured, but failed to initialize.")
+            
+        if PROPHET_AVAILABLE:
+            st.info("Prophet forecasting available.")
+        else:
+            st.warning("Prophet not available. Using ARIMA fallback.")
+            
         st.markdown("---")
-        st.markdown("Developed using Streamlit, Plotly, yfinance, and Gemini LLM.")
+        st.markdown("Developed using Streamlit, Plotly, yfinance, and Google Gemini.")
         
     # --- Main Application Logic ---
     st.title("Real-Time Strategic Intelligence System")
     st.markdown("---")
     
     # 1. Company Validation and Ticker Lookup
-    
     if not user_company_input or user_company_input.strip().lower() in INVALID_COMPANY_KEYWORDS:
-        st.error("Please enter a valid company name.")
+        st.error("Please enter a valid company name or ticker.")
         st.stop()
         
-    # Simplified Ticker Lookup
     try:
         yf_ticker = yf.Ticker(user_company_input)
         info = yf_ticker.info
-        company_name = info.get("longName", user_company_input).split(" ")[0] + "..."
+        
+        # Determine the best display name
+        long_name = info.get("longName")
+        company_name = long_name if long_name and len(long_name) > 3 else user_company_input
         ticker = info.get("symbol", user_company_input).upper()
+        
+        # Simple check to see if the ticker returned valid info
+        if not info.get("marketCap") and not info.get("currentPrice"):
+            st.error(f"Could not retrieve sufficient market data for '{user_company_input}'. Please verify the ticker or company name.")
+            st.stop()
+            
     except Exception:
-        st.error(f"Could not find a valid ticker for '{user_company_input}'. Check the spelling or try another company.")
+        st.error(f"Could not find a valid ticker for '{user_company_input}'. Check the spelling.")
         st.stop()
 
     st.header(f"Analysis for: {company_name} ({ticker})")
 
     # 2. RUN ANALYSIS
     try:
-        with st.spinner("Fetching market data and running analysis..."):
-            # Step A: Data Acquisition
-            market_df, current_price, market_cap = fetch_historical_data(ticker)
-            corpus_df = fetch_sentiment_data(company_name)
-            
-            # Step B: Sentiment Scoring
-            corpus_df, sent_norm = apply_sentiment_scoring(corpus_df.copy())
-            
-            # Step C: Forecasting
-            forecast_df, model_used, future_forecast_df = run_time_series_forecasting(market_df.copy())
-            
-            # Step D: Signal Generation
-            forecast_pct, forecast_trend = determine_forecast_trend(future_forecast_df, current_price)
-            trading_signal = compute_trading_signal(forecast_trend, sent_norm)
-            risk_dict = compute_risk_profile(market_df, corpus_df)
-            
-            # Get Info
-            info_data = fetch_company_info(company_name, ticker)
+        # Step A: Data Acquisition
+        market_df, current_price, market_cap = fetch_historical_data(ticker)
+        corpus_df = fetch_sentiment_data(company_name)
+        
+        # Step B: Sentiment Scoring
+        corpus_df, sent_norm = apply_sentiment_scoring(corpus_df.copy())
+        
+        # Step C: Forecasting
+        forecast_df, model_used, future_forecast_df = run_time_series_forecasting(market_df.copy())
+        
+        # Step D: Signal Generation
+        forecast_pct, forecast_trend = determine_forecast_trend(future_forecast_df, current_price)
+        trading_signal = compute_trading_signal(forecast_trend, sent_norm)
+        risk_dict = compute_risk_profile(market_df, corpus_df)
+        
+        # Get Info
+        info_data = fetch_company_info(company_name, ticker)
 
     except Exception as e:
-        st.error(f"An error occurred during analysis: {e}")
+        st.error(f"An unexpected error occurred during analysis: {e}")
         st.stop()
 
     # --- 3. Dashboard Metrics and Signal ---
 
     col1, col2, col3, col4 = st.columns(4)
-
-    # Signal Metric
-    if trading_signal == "BUY": signal_color = "green"
-    elif trading_signal == "SELL": signal_color = "red"
-    else: signal_color = "orange"
 
     col1.metric("Trading Signal", trading_signal, help="BUY/SELL/HOLD based on combined Forecast and Sentiment.")
     col2.metric("Current Price", f"${current_price:,.2f}", 
@@ -428,7 +463,7 @@ def main_app():
             sent_counts.columns = ["Sentiment", "Count"]
 
             st.dataframe(sent_counts, hide_index=True, use_container_width=True)
-            st.info(f"Sentiment Scoring Model: {'Gemini LLM' if GEMINI_ENABLED else 'Rule-Based Fallback'}")
+            st.info(f"Scoring Model: {'Gemini LLM' if GEMINI_ENABLED else 'Rule-Based Fallback'}")
 
         with sent_col2:
             st.markdown("#### Unified Text Corpus")
@@ -447,20 +482,26 @@ def main_app():
         with risk_col:
             st.markdown("#### Synthetic Risk Indices (0-100)")
             risk_df = pd.DataFrame(list(risk_dict.items()), columns=["Risk Index", "Score"]).set_index("Risk Index")
-            st.dataframe(risk_df.style.bar(subset=["Score"], color=['red', 'yellow', 'green'], align='mid'), use_container_width=True)
-            st.caption("Scores are synthetic, based on volatility, sentiment dispersion, and liquidity metrics.")
+            st.dataframe(
+                risk_df.style.bar(subset=["Score"], color=['#ff4b4b', '#f5e416', '#00BA7C'], align='mid'), 
+                use_container_width=True
+            )
+            st.caption("Scores are synthetic, based on historical volatility, sentiment dispersion, and liquidity.")
 
         with metric_col:
             st.markdown("#### Forecasting Details")
             st.metric("Model Used", model_used)
-            st.metric("Forecasted End Price", f"${future_forecast_df['yhat'].iloc[-1]:,.2f}")
-            st.metric("90% Confidence Interval Range", 
-                      f"${future_forecast_df['yhat_lower'].iloc[-1]:,.2f} - ${future_forecast_df['yhat_upper'].iloc[-1]:,.2f}")
-            st.caption(f"Forecast period: {future_forecast_df['date'].iloc[0].strftime('%Y-%m-%d')} to {future_forecast_df['date'].iloc[-1].strftime('%Y-%m-%d')}")
+            if not future_forecast_df.empty:
+                st.metric("Forecasted End Price", f"${future_forecast_df['yhat'].iloc[-1]:,.2f}")
+                st.metric("90% Confidence Interval Range", 
+                          f"${future_forecast_df['yhat_lower'].iloc[-1]:,.2f} - ${future_forecast_df['yhat_upper'].iloc[-1]:,.2f}")
+                st.caption(f"Forecast period: {future_forecast_df['date'].iloc[0].strftime('%Y-%m-%d')} to {future_forecast_df['date'].iloc[-1].strftime('%Y-%m-%d')}")
+            else:
+                st.info("Forecast data is not available.")
 
 
 if __name__ == "__main__":
-    # Hide the Streamlit footer/menu for a cleaner look
+    # Custom styles for a cleaner look
     hide_streamlit_style = """
         <style>
         #MainMenu {visibility: hidden;}
