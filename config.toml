@@ -1,0 +1,27 @@
+# .streamlit/config.toml
+
+[theme]
+# --- GLOBAL THEME SETTINGS ---
+
+# Base setting (Sets default behavior for widgets, text color)
+base="dark" 
+primaryColor="#4A90E2"  # Custom Blue for buttons/highlights
+
+# --- DARK THEME SETTINGS ---
+# Background: Deep professional black/navy
+backgroundColor="#0A1828" 
+# Secondary Background: Slightly lighter for sidebars/widgets
+secondaryBackgroundColor="#182A3A"
+# Text Color: Light grey/white for readability
+textColor="#E0E0E0"
+# Font: Modern, clean font
+font="sans serif"
+
+# --- LIGHT THEME SETTINGS (For contrast) ---
+# When the user switches to 'Light' in the Streamlit menu, 
+# the colors defined below will be used.
+[theme.light]
+backgroundColor="#FFFFFF"
+secondaryBackgroundColor="#F0F2F6"
+textColor="#333333"
+primaryColor="#4A90E2"
