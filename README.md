@@ -107,7 +107,7 @@ This project demonstrates the complete **data pipeline from data acquisition →
 * Anshika Gupta
 * Gopichand
 * Janmejay Singh
-* Vaishnavi
+* Vaishnavi Mahindrakar
 
 ---
 
