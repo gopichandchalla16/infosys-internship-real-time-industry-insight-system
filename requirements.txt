@@ -1,13 +1,27 @@
+# Web Application Framework
 streamlit
-streamlit-autorefresh
-yfinance
+
+# Data Manipulation and Analysis
 pandas
 numpy
+
+# Visualization
 plotly
-google-generativeai
-prophet>=1.1
-cmdstanpy
+
+# Financial Data & News Fetching
+yfinance
 feedparser
-transformers
+beautifulsoup4
+wikipedia
+rapidfuzz
+
+# AI & Machine Learning
+google-generativeai
+prophet
 torch
+transformers
+
+# Utilities & Alerts
 requests
+streamlit-autorefresh
+python-dotenv
